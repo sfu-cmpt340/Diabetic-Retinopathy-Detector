@@ -6,7 +6,7 @@ import os
 data = pd.read_csv('trainLabels.csv')  # Assuming 'data.csv' contains image names
 
 # Set paths
-input_folder = "data/val"  # Folder containing all images
+input_folder = "disease_no_disease/testing/test"  # Folder containing all images
 output_folder = "data_split"  # Output directory to store split data
 os.makedirs(output_folder, exist_ok=True)
 
