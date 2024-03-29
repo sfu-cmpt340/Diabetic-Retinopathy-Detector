@@ -5,6 +5,8 @@ import torchvision
 from torch import nn
 from d2l import torch as d2l
 from torchvision import transforms
+from torchvision.transforms import Compose, Resize, Normalize
+import multiLabelClassifier
 
 
 # Define transformations for training and validation sets
@@ -24,6 +26,22 @@ def evaluate_accuracy(data_loader, net, device):
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
     return correct / total
+
+def evaluate_multi_label_accuracy(data_loader, net, device, threshold=0.5):
+    net.eval()
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for images, labels in data_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = torch.sigmoid(net(images))  # Apply sigmoid to convert logits to probabilities
+            predicted = (outputs > threshold).float()  # Apply threshold
+            total += labels.numel()
+            correct += (predicted == labels).sum().item()
+
+    accuracy = correct / total
+    return accuracy
 
 # If `param_group=True`, the model parameters in the output layer will be
 # updated using a learning rate ten times greater
@@ -73,21 +91,45 @@ def train_lesion_detection(net, num_epochs, learning_rate,
                            device, param_group=True):
     print("Initializing training process...")
 
-    train_iter = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(
-        os.path.join("data_lesion_detection", 'train'), transform=train_augs),
-        batch_size=128, shuffle=True,num_workers=0)
+    transform = Compose([
+    Resize((224, 224)),
+    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+    ground_truth_dirs_train = {
+     'Microaneurysms': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/1. Microaneurysms', 'MA'),
+    'Haemorrhages': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/2. Haemorrhages', 'HE'),
+    'Hard_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/3. Hard Exudates', 'EX'),
+    'Soft_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/4. Soft Exudates', 'SE'),
+    'Optic_Disc': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/5. Optic Disc', 'OD')}
+
+    ground_truth_dirs_test= {
+     'Microaneurysms': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/1. Microaneurysms', 'MA'),
+    'Haemorrhages': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/2. Haemorrhages', 'HE'),
+    'Hard_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/3. Hard Exudates', 'EX'),
+    'Soft_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/4. Soft Exudates', 'SE'),
+    'Optic_Disc': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/5. Optic Disc', 'OD')}
+
+    train_dataset = multiLabelClassifier.MultiLabelLesionDataset(images_dir='./data_lesion_detection/1. Original Images/train',
+                                  ground_truth_dirs=ground_truth_dirs_train,
+                                  transform=transform)
+    test_dataset = multiLabelClassifier.MultiLabelLesionDataset(images_dir='./data_lesion_detection/1. Original Images/test',
+                                  ground_truth_dirs=ground_truth_dirs_test,
+                                  transform=transform)
+    train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=4, shuffle=True)
+    test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True)
+
     
-    val_iter = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(
-        os.path.join("data_lesion_detection", 'val'), transform=val_augs),
-        batch_size=128,num_workers=0)
     print("here 6")
     # Move the model to the specified device (GPU or CPU)
     net.to(device)
 
     # Loss function
-    loss = nn.CrossEntropyLoss()  # Adjust based on your task; this is for classification
+    loss_fn = nn.BCEWithLogitsLoss()  # Adjust based on your task; this is for classification
 
-    # Optimizer setup
+    #  It creates a differential learning rate strategy. 
+    # This is common when you're fine-tuning a pre-trained 
+    # model and want to update the pre-trained weights slowly while 
+    # allowing more substantial updates to the newly added layers
     if param_group:
         # Example: Set different learning rates for different parts of the model
         params_1x = [param for name, param in net.named_parameters()
@@ -102,27 +144,30 @@ def train_lesion_detection(net, num_epochs, learning_rate,
     print("here 7")
 
     # Training loop
+    net.to(device)
+    optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate, weight_decay=0.001)
+    
     for epoch in range(num_epochs):
-        net.train()
+        net.train()  # Set the network to training mode
         running_loss = 0.0
-        for i, data in enumerate(train_iter, 0):
-            inputs, labels = data[0].to(device), data[1].to(device)
-
-            trainer.zero_grad()
-
-            outputs = net(inputs)
-            l = loss(outputs, labels)
-            l.backward()
-            trainer.step()
-
-            running_loss += l.item()
-
-        print(f'Epoch {epoch + 1}, Loss: {running_loss / len(train_iter)}')
-
-        # Validation accuracy (or other metric) evaluation
-        accuracy = evaluate_accuracy(val_iter, net, device)
-        print(f'Epoch {epoch + 1}, Validation Accuracy: {accuracy * 100:.2f}%')
-   
+        for images, labels in train_iter:
+            images = images.to(device)
+            labels = labels.to(device)
+            
+            optimizer.zero_grad()  # Zero the parameter gradients
+            outputs = net(images)  # Forward pass
+            loss = loss_fn(outputs, labels)  # Calculate loss
+            loss.backward()  # Backward pass
+            optimizer.step()  # Optimize
+            
+            running_loss += loss.item() * images.size(0)
+        
+        epoch_loss = running_loss / len(train_iter.dataset)
+        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}')
+        
+        # Evaluate after each epoch
+        val_accuracy = evaluate_multi_label_accuracy(test_iter, net, device)
+        print(f'Validation Multi-Label Accuracy: {val_accuracy:.4f}')
     print("Training completed.")
 
 # Example usage:
@@ -151,7 +196,7 @@ finetune_net.fc = nn.Linear(finetune_net.fc.in_features, 5)
 nn.init.xavier_uniform_(finetune_net.fc.weight)
 
 lesion_detection_model =  torchvision.models.resnet18(weights=None)
-lesion_detection_model.fc = nn.Linear(lesion_detection_model.fc.in_features, 2) #binary classification
+lesion_detection_model.fc = nn.Linear(lesion_detection_model.fc.in_features, 5) #multi labelbinary classification
 
 fine_tuned_weights = torch.load('finetune_net.pth')
 # Remove the weights for the final layer from this dictionary
@@ -165,7 +210,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # finetune_net.load_state_dict(torch.load('finetune_net.pth'))
 lesion_detection_model.load_state_dict(fine_tuned_weights, strict=False)
 
-train_lesion_detection(lesion_detection_model, 1, 1e-4, device)
+train_lesion_detection(lesion_detection_model, 5, 1e-3, device) 
 torch.save(lesion_detection_model.state_dict(), 'lesion_detection_model.pth')
 
 
