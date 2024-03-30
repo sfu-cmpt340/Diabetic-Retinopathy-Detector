@@ -5,8 +5,11 @@ import torchvision
 from torch import nn
 from d2l import torch as d2l
 from torchvision import transforms
-from torchvision.transforms import Compose, Resize, Normalize
+from torchvision.transforms import Compose, Resize, Normalize,ToTensor
 import multiLabelClassifier
+import Lesion_Detection_Segmentation
+import lesionSegmentationDataset
+
 
 
 # Define transformations for training and validation sets
@@ -87,39 +90,11 @@ def train_fine_tuning(net, learning_rate, batch_size=128, num_epochs=  1,
     print(f'Validation Accuracy: {accuracy * 100:.2f}%')
     torch.save(finetune_net.state_dict(), 'finetune_net.pth')
 
+
 def train_lesion_detection(net, num_epochs, learning_rate,
-                           device, param_group=True):
+                           device,train_iter, test_iter, param_group=True):
     print("Initializing training process...")
 
-    transform = Compose([
-    Resize((224, 224)),
-    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
-    ground_truth_dirs_train = {
-     'Microaneurysms': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/1. Microaneurysms', 'MA'),
-    'Haemorrhages': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/2. Haemorrhages', 'HE'),
-    'Hard_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/3. Hard Exudates', 'EX'),
-    'Soft_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/4. Soft Exudates', 'SE'),
-    'Optic_Disc': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/5. Optic Disc', 'OD')}
-
-    ground_truth_dirs_test= {
-     'Microaneurysms': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/1. Microaneurysms', 'MA'),
-    'Haemorrhages': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/2. Haemorrhages', 'HE'),
-    'Hard_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/3. Hard Exudates', 'EX'),
-    'Soft_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/4. Soft Exudates', 'SE'),
-    'Optic_Disc': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/5. Optic Disc', 'OD')}
-
-    train_dataset = multiLabelClassifier.MultiLabelLesionDataset(images_dir='./data_lesion_detection/1. Original Images/train',
-                                  ground_truth_dirs=ground_truth_dirs_train,
-                                  transform=transform)
-    test_dataset = multiLabelClassifier.MultiLabelLesionDataset(images_dir='./data_lesion_detection/1. Original Images/test',
-                                  ground_truth_dirs=ground_truth_dirs_test,
-                                  transform=transform)
-    train_iter = torch.utils.data.DataLoader(train_dataset, batch_size=4, shuffle=True)
-    test_iter = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True)
-
-    
-    print("here 6")
     # Move the model to the specified device (GPU or CPU)
     net.to(device)
 
@@ -146,7 +121,7 @@ def train_lesion_detection(net, num_epochs, learning_rate,
     # Training loop
     net.to(device)
     optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate, weight_decay=0.001)
-    
+
     for epoch in range(num_epochs):
         net.train()  # Set the network to training mode
         running_loss = 0.0
@@ -170,9 +145,52 @@ def train_lesion_detection(net, num_epochs, learning_rate,
         print(f'Validation Multi-Label Accuracy: {val_accuracy:.4f}')
     print("Training completed.")
 
-# Example usage:
-# Assuming lesion_detection_net is your lesion detection model
-# and you have defined train_iter and val_iter DataLoaders for your dataset
+#using it
+
+
+
+def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segmentation_module, train_loader,device):
+    lesion_segmentation_module.to(device)
+    for epoch in range(num_epochs):
+        for images, targets in train_loader:  # Assuming targets now include boxes, labels, and masks
+            images = list(image.to(device) for image in images)
+            targets = {k: v.to(device) for k, v in targets.items()}
+          
+            optimizer_segmentation.zero_grad()
+            loss_dict = lesion_segmentation_module.mask_rcnn_model(images, targets)
+            print("herererere")
+            losses = sum(loss for loss in loss_dict.values())
+            
+            losses.backward()
+            optimizer_segmentation.step()
+            
+            print(epoch,'loss:', losses.item())
+    
+        #     images = list(image.to(device) for image in images)
+        #     # print(targets)
+        #     # break
+        #     targets = [{k: v.to(device) for k, v in t.items()} for t in targets]  # Ensure targets are on the correct device
+
+        #     loss_dict = lesion_segmentation_module(images, targets)
+        #     losses = sum(loss for loss in loss_dict.values())
+
+        #     optimizer_segmentation.zero_grad()
+        #     losses.backward()
+        #     optimizer_segmentation.step()
+
+        #     print(f"Epoch {epoch+1}, Loss: {losses.item()}")
+        for images, targets in train_loader:
+            print(type(targets))  # Should be list or dict
+            if isinstance(targets, dict):
+                print(targets.keys())  # Should show 'boxes', 'labels', 'masks'
+                print(type(targets["boxes"]))
+            elif isinstance(targets, list):
+                print(type(targets[0]))  # Should be dict
+                print(targets[0].keys())  # Should show 'boxes', 'labels', 'masks'
+            break
+
+
+
 
 
 
@@ -195,22 +213,92 @@ finetune_net = torchvision.models.resnet18(weights=torchvision.models.ResNet18_W
 finetune_net.fc = nn.Linear(finetune_net.fc.in_features, 5)
 nn.init.xavier_uniform_(finetune_net.fc.weight)
 
-lesion_detection_model =  torchvision.models.resnet18(weights=None)
-lesion_detection_model.fc = nn.Linear(lesion_detection_model.fc.in_features, 5) #multi labelbinary classification
+ground_truth_dirs_train = {
+     'Microaneurysms': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/1. Microaneurysms', 'MA'),
+    'Haemorrhages': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/2. Haemorrhages', 'HE'),
+    'Hard_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/3. Hard Exudates', 'EX'),
+    'Soft_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/4. Soft Exudates', 'SE'),
+    'Optic_Disc': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/5. Optic Disc', 'OD')}
 
-fine_tuned_weights = torch.load('finetune_net.pth')
+ground_truth_dirs_test= {
+     'Microaneurysms': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/1. Microaneurysms', 'MA'),
+    'Haemorrhages': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/2. Haemorrhages', 'HE'),
+    'Hard_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/3. Hard Exudates', 'EX'),
+    'Soft_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/4. Soft Exudates', 'SE'),
+    'Optic_Disc': ('./data_lesion_detection/2. All Segmentation Groundtruths/test/5. Optic Disc', 'OD')}
+
+transform = Compose([
+    Resize((224, 224)),
+    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+train_dataset_detection_segmentation = multiLabelClassifier.MultiLabelLesionDataset(images_dir='./data_lesion_detection/1. Original Images/train',
+                                  ground_truth_dirs=ground_truth_dirs_train,
+                                  transform=transform)
+test_dataset_detection_segmentation = multiLabelClassifier.MultiLabelLesionDataset(images_dir='./data_lesion_detection/1. Original Images/test',
+                                  ground_truth_dirs=ground_truth_dirs_test,
+                                  transform=transform)
+train_iter_detection_segmentation = torch.utils.data.DataLoader(train_dataset_detection_segmentation, batch_size=4, shuffle=True)
+test_iter_detection_segmentation = torch.utils.data.DataLoader(test_dataset_detection_segmentation, batch_size=4, shuffle=True)
+
+
+# lesion_detection_model =  torchvision.models.resnet18(weights=None)
+# lesion_detection_model.fc = nn.Linear(lesion_detection_model.fc.in_features, 5) #multi labelbinary classification
+
+# fine_tuned_weights = torch.load('finetune_net.pth')
 # Remove the weights for the final layer from this dictionary
 # The name of the final layer's weights/bias may vary depending on your architecture
 # For a typical ResNet, it's 'fc.weight' and 'fc.bias' for the fully connected layer
-del fine_tuned_weights['fc.weight']
-del fine_tuned_weights['fc.bias']
+# del fine_tuned_weights['fc.weight']
+# del fine_tuned_weights['fc.bias']
 
 # train_fine_tuning(finetune_net, 5e-5)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # finetune_net.load_state_dict(torch.load('finetune_net.pth'))
-lesion_detection_model.load_state_dict(fine_tuned_weights, strict=False)
+# lesion_detection_model.load_state_dict(fine_tuned_weights, strict=False)
 
-train_lesion_detection(lesion_detection_model, 5, 1e-3, device) 
-torch.save(lesion_detection_model.state_dict(), 'lesion_detection_model.pth')
+# train_lesion_detection(lesion_detection_model, 5, 1e-3, device,train_iter_detection_segmentation,test_iter_detection_segmentation) 
+# torch.save(lesion_detection_model.state_dict(), 'lesion_detection_model.pth')
+
+# lesion_detection_model = torch.load('lesion_detection_model.pth')
+
+
+
+lesion_detection_model = Lesion_Detection_Segmentation.LesionDetectionModel(num_classes=5, learning_rate=1e-3,device=device)
+# lesion_detection_model.train(train_iter_detection_segmentation, test_iter_detection_segmentation, num_epochs=5)
+torch.save(lesion_detection_model.model.state_dict(), 'lesion_detection_model.pth')
+
+
+# Retrieve the feature extractor
+feature_extractor = lesion_detection_model.get_feature_extractor()
+# print(feature_extractor)
+
+
+image_transforms = Compose([
+    Resize((224, 224)),
+    ToTensor(),
+    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+# Mask transform only converts mask to tensor without normalization
+mask_transforms = Compose([
+    Resize((224, 224)),
+    ToTensor(),
+])
+
+segmentation_dataset = lesionSegmentationDataset.MultiLesionSegmentationDataset(images_dir='./data_lesion_detection/1. Original Images/train',
+                                         masks_dir=ground_truth_dirs_train,
+                                         image_transform=image_transforms,
+                                         mask_transform=mask_transforms)
+
+segmentation_data_loader = torch.utils.data.DataLoader(segmentation_dataset, batch_size=4, shuffle=True)
+
+lesion_segmentation_module = Lesion_Detection_Segmentation.LesionSegmentationModule(feature_extractor=feature_extractor,num_classes= 5)
+criterion_segmentation = nn.BCEWithLogitsLoss()  # Assuming binary segmentation
+optimizer_segmentation = torch.optim.Adam(lesion_segmentation_module.parameters(), lr=0.001)
+
+train_lesion_segmentation(1,optimizer_segmentation,lesion_segmentation_module,segmentation_data_loader,device)
+
+
+
 
 
