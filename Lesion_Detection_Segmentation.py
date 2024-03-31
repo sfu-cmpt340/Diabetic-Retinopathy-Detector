@@ -137,8 +137,8 @@ class LesionSegmentationModule(nn.Module):
         # Initialize the MaskRCNN model with the custom backbone
         self.mask_rcnn_model = MaskRCNN(backbone=backbone, num_classes=num_classes, rpn_anchor_generator=anchor_generator)
         
-        # for param in backbone.parameters():
-        #     param.requires_grad = False
+        for param in backbone.parameters():
+            param.requires_grad = False
         
     def forward(self, images, targets):
         # print(type(targets))
