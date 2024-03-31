@@ -140,8 +140,8 @@ class LesionSegmentationModule(nn.Module):
         for param in backbone.parameters():
             param.requires_grad = False
         
-    def forward(self, images, targets=None):
-    
+    def forward(self, images, targets):
+        print(type(targets))
         output = self.mask_rcnn_model(images, targets)
         return output
 

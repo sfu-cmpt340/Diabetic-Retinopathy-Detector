@@ -7,6 +7,7 @@ from torchvision.transforms import Compose, Resize, ToTensor, Normalize
 from torch.utils.data import Dataset, DataLoader
 from torchvision import tv_tensors
 from torchvision.transforms.v2 import functional as F
+from torchvision.ops.boxes import masks_to_boxes
 
 
 class MultiLesionSegmentationDataset(Dataset):
@@ -28,6 +29,7 @@ class MultiLesionSegmentationDataset(Dataset):
     def __getitem__(self, idx):
         img_path = os.path.join(self.images_dir, self.images[idx])
         img = Image.open(img_path).convert("RGB")
+        print(img_path)
         
         # Initialize an empty mask of the same size as the image
         mask = np.zeros((np.array(img).shape[0], np.array(img).shape[1]), dtype=np.uint8)
@@ -51,20 +53,30 @@ class MultiLesionSegmentationDataset(Dataset):
     # Convert the image to tensor
         img_tensor = self.image_transform(img) if self.image_transform else ToTensor()(img)
 
-        # Calculate the single bounding box for the aggregated mask
-        pos = np.where(mask)
-        if pos[0].size > 0 and pos[1].size > 0:  # Ensure there are positive pixels
-            boxes = torch.tensor([[np.min(pos[1]), np.min(pos[0]), np.max(pos[1]), np.max(pos[0])]], dtype=torch.float32)
-        else:
-            boxes = torch.tensor([], dtype=torch.float32).reshape(0, 4)  # No positive pixels
+        mask_tensor = ToTensor()(Image.fromarray(mask))
+        img_tensor = ToTensor()(img)
 
-        targets = {}
-        targets["boxes"] = boxes
-        # targets["boxes"] = tv_tensors.BoundingBoxes(boxes, format="XYXY", canvas_size=F.get_size(img))
-        targets["labels"] = torch.ones((len(boxes),), dtype=torch.int64)
-        targets["masks"] = mask_tensor.squeeze()
-        print(type(targets))
+        # Calculate bounding boxes from mask_tensor
+        pos = np.where(mask)
+        boxes = torch.tensor([[np.min(pos[1]), np.min(pos[0]), np.max(pos[1]), np.max(pos[0])]], dtype=torch.float32) if pos[0].size > 0 else torch.tensor([], dtype=torch.float32).reshape(0, 4)
+
+        num_objs = len(torch.unique(mask_tensor)) - 1  # Assuming first id is background
+        labels = torch.ones((num_objs,), dtype=torch.int64)
+        image_id = torch.tensor([idx])
+        area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
+        iscrowd = torch.zeros((num_objs,), dtype=torch.int64)
+
+        targets = {
+            "boxes": boxes,
+            "labels": labels,
+            "masks": mask_tensor.unsqueeze(0),  # Add batch dimension if it's missing
+            "image_id": image_id,
+            "area": area,
+            "iscrowd": iscrowd
+        }
+
         return img_tensor, targets
+
 
 
 

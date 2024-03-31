@@ -11,7 +11,6 @@ import Lesion_Detection_Segmentation
 import lesionSegmentationDataset
 
 
-
 # Define transformations for training and validation sets
 
 
@@ -149,15 +148,20 @@ def train_lesion_detection(net, num_epochs, learning_rate,
 
 
 
-def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segmentation_module, train_loader,device):
+def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segmentation_model, train_loader,device):
     lesion_segmentation_module.to(device)
     for epoch in range(num_epochs):
         for images, targets in train_loader:  # Assuming targets now include boxes, labels, and masks
             images = list(image.to(device) for image in images)
-            targets = {k: v.to(device) for k, v in targets.items()}
+            # targets = {k: v.to(device) for k, v in targets.items()}
           
             optimizer_segmentation.zero_grad()
-            loss_dict = lesion_segmentation_module.mask_rcnn_model(images, targets)
+            print("herererere")
+
+            print(type(targets["boxes"]))
+            print((targets["boxes"]))
+
+            loss_dict = lesion_segmentation_model(images, targets)
             print("herererere")
             losses = sum(loss for loss in loss_dict.values())
             
@@ -263,14 +267,25 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 
+
+
+
+
 lesion_detection_model = Lesion_Detection_Segmentation.LesionDetectionModel(num_classes=5, learning_rate=1e-3,device=device)
 # lesion_detection_model.train(train_iter_detection_segmentation, test_iter_detection_segmentation, num_epochs=5)
-torch.save(lesion_detection_model.model.state_dict(), 'lesion_detection_model.pth')
-
+# torch.save(lesion_detection_model.model.state_dict(), 'lesion_detection_model.pth')
 
 # Retrieve the feature extractor
+checkpoint = torch.load('lesion_detection_model.pth')
+
+# Assuming 'state_dict' is the key for the model's state_dict in the checkpoint
+
+# Load the model state_dict
+lesion_detection_model.model.load_state_dict(checkpoint)
+
+# Now you can access the feature extractor
 feature_extractor = lesion_detection_model.get_feature_extractor()
-# print(feature_extractor)
+print(feature_extractor)
 
 
 image_transforms = Compose([
@@ -289,14 +304,17 @@ segmentation_dataset = lesionSegmentationDataset.MultiLesionSegmentationDataset(
                                          masks_dir=ground_truth_dirs_train,
                                          image_transform=image_transforms,
                                          mask_transform=mask_transforms)
+# segmentation_dataset = p.LesionSegMask(root='./data_lesion_detection/')
+print(segmentation_dataset)
 
-segmentation_data_loader = torch.utils.data.DataLoader(segmentation_dataset, batch_size=4, shuffle=True)
+segmentation_data_loader = torch.utils.data.DataLoader(( segmentation_dataset), batch_size=4, shuffle=True)
 
 lesion_segmentation_module = Lesion_Detection_Segmentation.LesionSegmentationModule(feature_extractor=feature_extractor,num_classes= 5)
+
 criterion_segmentation = nn.BCEWithLogitsLoss()  # Assuming binary segmentation
 optimizer_segmentation = torch.optim.Adam(lesion_segmentation_module.parameters(), lr=0.001)
 
-train_lesion_segmentation(1,optimizer_segmentation,lesion_segmentation_module,segmentation_data_loader,device)
+train_lesion_segmentation(1,optimizer_segmentation,lesion_segmentation_module.mask_rcnn_model,segmentation_data_loader,device)
 
 
 
