@@ -9,6 +9,8 @@ from torchvision.transforms import Compose, Resize, Normalize,ToTensor
 import multiLabelClassifier
 import Lesion_Detection_Segmentation
 import lesionSegmentationDataset
+from torch.utils.data.dataloader import default_collate
+
 
 
 # Define transformations for training and validation sets
@@ -153,49 +155,18 @@ def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segment
     for epoch in range(num_epochs):
         for images, targets in train_loader:  # Assuming targets now include boxes, labels, and masks
             images = list(image.to(device) for image in images)
-            # targets = {k: v.to(device) for k, v in targets.items()}
+            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+            # print("Images shape:", [image.shape for image in images])  # Print shapes of images
+
           
             optimizer_segmentation.zero_grad()
-            print("herererere")
-
-            print(type(targets["boxes"]))
-            print((targets["boxes"]))
-
-            loss_dict = lesion_segmentation_model(images, targets)
-            print("herererere")
+            loss_dict = lesion_segmentation_model(images,targets)
             losses = sum(loss for loss in loss_dict.values())
             
             losses.backward()
             optimizer_segmentation.step()
             
-            print(epoch,'loss:', losses.item())
-    
-        #     images = list(image.to(device) for image in images)
-        #     # print(targets)
-        #     # break
-        #     targets = [{k: v.to(device) for k, v in t.items()} for t in targets]  # Ensure targets are on the correct device
-
-        #     loss_dict = lesion_segmentation_module(images, targets)
-        #     losses = sum(loss for loss in loss_dict.values())
-
-        #     optimizer_segmentation.zero_grad()
-        #     losses.backward()
-        #     optimizer_segmentation.step()
-
-        #     print(f"Epoch {epoch+1}, Loss: {losses.item()}")
-        for images, targets in train_loader:
-            print(type(targets))  # Should be list or dict
-            if isinstance(targets, dict):
-                print(targets.keys())  # Should show 'boxes', 'labels', 'masks'
-                print(type(targets["boxes"]))
-            elif isinstance(targets, list):
-                print(type(targets[0]))  # Should be dict
-                print(targets[0].keys())  # Should show 'boxes', 'labels', 'masks'
-            break
-
-
-
-
+        print(epoch,'loss:', losses.item())
 
 
 train_augs = transforms.Compose([
@@ -285,7 +256,7 @@ lesion_detection_model.model.load_state_dict(checkpoint)
 
 # Now you can access the feature extractor
 feature_extractor = lesion_detection_model.get_feature_extractor()
-print(feature_extractor)
+# print(feature_extractor)
 
 
 image_transforms = Compose([
@@ -305,16 +276,28 @@ segmentation_dataset = lesionSegmentationDataset.MultiLesionSegmentationDataset(
                                          image_transform=image_transforms,
                                          mask_transform=mask_transforms)
 # segmentation_dataset = p.LesionSegMask(root='./data_lesion_detection/')
-print(segmentation_dataset)
+# print(segmentation_dataset)
 
-segmentation_data_loader = torch.utils.data.DataLoader(( segmentation_dataset), batch_size=4, shuffle=True)
+def custom_collate_fn(batch):
+    batch_images = [item[0] for item in batch]  # Extract images
+    batch_targets = [item[1] for item in batch]  # Extract targets
+    
+    batched_images = default_collate(batch_images)  # Use PyTorch's default_collate to batch images
+    
+    # No need to batch targets as they should already be in the correct format (list of dictionaries)
+    # print(batch_targets)
+    return batched_images, batch_targets
+segmentation_data_loader = torch.utils.data.DataLoader( segmentation_dataset, batch_size=4, shuffle=True,collate_fn=custom_collate_fn)
+
 
 lesion_segmentation_module = Lesion_Detection_Segmentation.LesionSegmentationModule(feature_extractor=feature_extractor,num_classes= 5)
 
 criterion_segmentation = nn.BCEWithLogitsLoss()  # Assuming binary segmentation
-optimizer_segmentation = torch.optim.Adam(lesion_segmentation_module.parameters(), lr=0.001)
+optimizer_segmentation = torch.optim.Adam(lesion_segmentation_module.parameters(), lr=0.01)
 
-train_lesion_segmentation(1,optimizer_segmentation,lesion_segmentation_module.mask_rcnn_model,segmentation_data_loader,device)
+
+
+train_lesion_segmentation(5,optimizer_segmentation,lesion_segmentation_module.mask_rcnn_model,segmentation_data_loader,device)
 
 
 

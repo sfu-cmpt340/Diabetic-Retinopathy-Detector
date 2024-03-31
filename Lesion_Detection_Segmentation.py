@@ -118,10 +118,10 @@ class CustomBackboneWithFPN(nn.Module):
         self.feature_extractor = feature_extractor
         # Assuming the feature extractor outputs feature maps of 256 channels.
         # This value should be changed according to your feature extractor's actual output channels.
-        self.out_channels = 256
+        self.out_channels = 512
     
     def forward(self, x):
-        print(x)
+        # print(x)
         return self.feature_extractor(x)
 
 # Define Lesion Segmentation Module
@@ -137,11 +137,11 @@ class LesionSegmentationModule(nn.Module):
         # Initialize the MaskRCNN model with the custom backbone
         self.mask_rcnn_model = MaskRCNN(backbone=backbone, num_classes=num_classes, rpn_anchor_generator=anchor_generator)
         
-        for param in backbone.parameters():
-            param.requires_grad = False
+        # for param in backbone.parameters():
+        #     param.requires_grad = False
         
     def forward(self, images, targets):
-        print(type(targets))
+        # print(type(targets))
         output = self.mask_rcnn_model(images, targets)
         return output
 

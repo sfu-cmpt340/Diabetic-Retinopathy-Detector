@@ -29,7 +29,7 @@ class MultiLesionSegmentationDataset(Dataset):
     def __getitem__(self, idx):
         img_path = os.path.join(self.images_dir, self.images[idx])
         img = Image.open(img_path).convert("RGB")
-        print(img_path)
+        # print(img_path)
         
         # Initialize an empty mask of the same size as the image
         mask = np.zeros((np.array(img).shape[0], np.array(img).shape[1]), dtype=np.uint8)
@@ -53,9 +53,6 @@ class MultiLesionSegmentationDataset(Dataset):
     # Convert the image to tensor
         img_tensor = self.image_transform(img) if self.image_transform else ToTensor()(img)
 
-        mask_tensor = ToTensor()(Image.fromarray(mask))
-        img_tensor = ToTensor()(img)
-
         # Calculate bounding boxes from mask_tensor
         pos = np.where(mask)
         boxes = torch.tensor([[np.min(pos[1]), np.min(pos[0]), np.max(pos[1]), np.max(pos[0])]], dtype=torch.float32) if pos[0].size > 0 else torch.tensor([], dtype=torch.float32).reshape(0, 4)
@@ -69,11 +66,13 @@ class MultiLesionSegmentationDataset(Dataset):
         targets = {
             "boxes": boxes,
             "labels": labels,
-            "masks": mask_tensor.unsqueeze(0),  # Add batch dimension if it's missing
+            "masks": mask_tensor,  
             "image_id": image_id,
             "area": area,
             "iscrowd": iscrowd
         }
+        # print(1)
+        # print(targets)
 
         return img_tensor, targets
 
