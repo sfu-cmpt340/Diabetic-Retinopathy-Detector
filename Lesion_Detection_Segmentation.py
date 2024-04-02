@@ -33,26 +33,7 @@ def evaluate_multi_label_accuracy(data_loader, net, device, threshold=0.5):
 
 
 # Define Lesion Detection Module
-# class LesionDetectionModule(nn.Module):
-#     def __init__(self, num_classes):
-#         super(LesionDetectionModule, self).__init__()
-#         # Load pre-trained ResNet18 model
-#         resnet_model = models.resnet18(pretrained=True)
-        
-#         # Replace the fully connected layer with a new one for lesion detection
-#         resnet_model.fc = nn.Linear(resnet_model.fc.in_features, num_classes)
-        
-#         # Initialize feature extractor with pre-trained ResNet weights
-#         self.feature_extractor = resnet_model
-        
-#     def forward(self, x):
-#         # Forward pass through the feature extractor
-#         x = self.feature_extractor(x)
-#         return x
 
-# import torch
-# import torch.nn as nn
-# from torchvision import models
 
 class LesionDetectionModel:
     def __init__(self, num_classes, learning_rate=1e-3, device=None):
@@ -140,8 +121,9 @@ class LesionSegmentationModule(nn.Module):
         for param in backbone.parameters():
             param.requires_grad = False
         
-    def forward(self, images, targets):
-        # print(type(targets))
+    def forward(self, images, targets=None):
+        if self.training and targets is None:
+            raise ValueError("During training, targets must be provided.")
         output = self.mask_rcnn_model(images, targets)
         return output
 

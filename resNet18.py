@@ -150,8 +150,9 @@ def train_lesion_detection(net, num_epochs, learning_rate,
 
 
 
-def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segmentation_model, train_loader,device):
+def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segmentation_module, train_loader,device):
     lesion_segmentation_module.to(device)
+    print("Training lesion segmentation")
     for epoch in range(num_epochs):
         for images, targets in train_loader:  # Assuming targets now include boxes, labels, and masks
             images = list(image.to(device) for image in images)
@@ -160,13 +161,14 @@ def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segment
 
           
             optimizer_segmentation.zero_grad()
-            loss_dict = lesion_segmentation_model(images,targets)
+            loss_dict = lesion_segmentation_module.mask_rcnn_model(images,targets)
             losses = sum(loss for loss in loss_dict.values())
             
             losses.backward()
             optimizer_segmentation.step()
             
         print(epoch,'loss:', losses.item())
+    torch.save(lesion_segmentation_module, 'lesion_segmentation_model.pth')
 
 
 train_augs = transforms.Compose([
@@ -187,6 +189,7 @@ val_augs = transforms.Compose([
 finetune_net = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.DEFAULT)
 finetune_net.fc = nn.Linear(finetune_net.fc.in_features, 5)
 nn.init.xavier_uniform_(finetune_net.fc.weight)
+# train_fine_tuning(finetune_net, 5e-5)
 
 ground_truth_dirs_train = {
      'Microaneurysms': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/1. Microaneurysms', 'MA'),
@@ -297,7 +300,7 @@ optimizer_segmentation = torch.optim.Adam(lesion_segmentation_module.parameters(
 
 
 
-train_lesion_segmentation(5,optimizer_segmentation,lesion_segmentation_module.mask_rcnn_model,segmentation_data_loader,device)
+train_lesion_segmentation(1,optimizer_segmentation,lesion_segmentation_module,segmentation_data_loader,device)
 
 
 
