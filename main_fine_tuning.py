@@ -1,14 +1,7 @@
 from __future__ import print_function, division
 import os
 import torch
-import torchvision
-from torch import nn
-from d2l import torch as d2l
-from torchvision import transforms
-
-import torch.optim as optim
 from torch.autograd import Variable
-import numpy as np
 import matplotlib.pyplot as plt
 from PIL import ImageFile
 import copy
@@ -17,6 +10,10 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 def train_model(model, criterion, optimizer, lr_scheduler,dset_loaders,dset_sizes, num_epochs=100,use_gpu =0):
     best_model = model
     best_acc = 0.0
+    train_loss_history = []
+    train_acc_history = []
+    test_loss_history = []
+    test_acc_history = []
 
     for epoch in range(num_epochs):
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
@@ -84,6 +81,12 @@ def train_model(model, criterion, optimizer, lr_scheduler,dset_loaders,dset_size
             epoch_acc = running_corrects.item() / float(dset_sizes[phase])
             print('{} Loss: {:.4f} Acc: {:.4f}'.format(
                 phase, epoch_loss, epoch_acc))
+            if phase == 'training':
+                train_loss_history.append(epoch_loss)
+                train_acc_history.append(epoch_acc)
+            else:
+                test_loss_history.append(epoch_loss)
+                test_acc_history.append(epoch_acc)
 
 
             # deep copy the model
@@ -92,6 +95,25 @@ def train_model(model, criterion, optimizer, lr_scheduler,dset_loaders,dset_size
                     best_acc = epoch_acc
                     best_model = copy.deepcopy(model)
                     print('new best accuracy = ',best_acc)
+    plt.figure(figsize=(10, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(train_loss_history, label='Training Loss')
+    plt.plot(test_loss_history, label='Testing Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Loss Over Time')
+    plt.legend()
+
+    plt.subplot(1, 2, 2)
+    plt.plot(train_acc_history, label='Training Accuracy')
+    plt.plot(test_acc_history, label='Testing Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.title('Accuracy Over Time')
+    plt.legend()
+
+    plt.show()
+
     print('Training complete')
     print('Best val Acc: {:4f}'.format(best_acc))
     print('returning and looping back')
