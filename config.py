@@ -17,9 +17,3 @@ BATCH_SIZE = 32 # Set as high as possible. If you keep it too high, you'll get a
 ### GPU SETTINGS
 CUDA_DEVICE = 0 # Enter device ID of your gpu if you want to run on gpu. Otherwise neglect.
 GPU_MODE = 0 # set to 1 if want to run on gpu.
-
-
-# SETTINGS FOR DISPLAYING ON TENSORBOARD
-USE_TENSORBOARD = 0 #if you want to use tensorboard set this to 1.
-TENSORBOARD_SERVER = "YOUR TENSORBOARD SERVER ADDRESS HERE" # If you set.
-EXP_NAME = "fine_tuning_experiment" # if using tensorboard, enter name of experiment you want it to be displayed as.

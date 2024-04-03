@@ -1,5 +1,7 @@
 
 
+
+
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -8,6 +10,7 @@ import torchvision.datasets as datasets
 import torchvision.models.detection as detection
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
+from torch.utils.data.dataloader import default_collate
 import torchvision
 from torchvision.models.detection.rpn import AnchorGenerator
 from torchvision.models.detection import MaskRCNN 
@@ -34,8 +37,7 @@ def evaluate_multi_label_accuracy(data_loader, net, device, threshold=0.5):
 
 # Define Lesion Detection Module
 
-
-class LesionDetectionModel:
+class LesionDetectionModel():
     def __init__(self, num_classes, learning_rate=1e-3, device=None):
         self.device = device if device else torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model = models.resnet18(weights=None)
@@ -127,7 +129,87 @@ class LesionSegmentationModule(nn.Module):
         output = self.mask_rcnn_model(images, targets)
         return output
 
+def train_lesion_detection(net, num_epochs, learning_rate,
+                           device,train_iter, test_iter, param_group=True):
+    print("Initializing training process...")
 
+
+    # Loss function
+    loss_fn = nn.BCEWithLogitsLoss()  # Adjust based on your task; this is for classification
+
+    #  It creates a differential learning rate strategy. 
+    # This is common when you're fine-tuning a pre-trained 
+    # model and want to update the pre-trained weights slowly while 
+    # allowing more substantial updates to the newly added layers
+    if param_group:
+        # Example: Set different learning rates for different parts of the model
+        params_1x = [param for name, param in net.parameters()
+                     if 'fc' not in name]  # Adjust if your model's layer names differ
+        trainer = torch.optim.SGD([
+            {'params': params_1x},
+            {'params': net.fc.parameters(), 'lr': learning_rate * 10}],  # Example adjustment
+            lr=learning_rate, weight_decay=0.001)
+    else:
+        trainer = torch.optim.SGD(net.parameters(), lr=learning_rate, weight_decay=0.001)
+
+    print("here 7")
+
+    # Training loop
+    net.to(device)
+    optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate, weight_decay=0.001)
+
+    for epoch in range(num_epochs):
+        net.train()  # Set the network to training mode
+        running_loss = 0.0
+        for images, labels in train_iter:
+            images = images.to(device)
+            labels = labels.to(device)
+            
+            optimizer.zero_grad()  # Zero the parameter gradients
+            outputs = net(images)  # Forward pass
+            loss = loss_fn(outputs, labels)  # Calculate loss
+            loss.backward()  # Backward pass
+            optimizer.step()  # Optimize
+            
+            running_loss += loss.item() * images.size(0)
+        
+        epoch_loss = running_loss / len(train_iter.dataset)
+        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}')
+        
+        # Evaluate after each epoch
+        val_accuracy = evaluate_multi_label_accuracy(test_iter, net, device)
+        print(f'Validation Multi-Label Accuracy: {val_accuracy:.4f}')
+    print("Training completed.")
+
+def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segmentation_module, train_loader,device):
+    lesion_segmentation_module.to(device)
+    print("Training lesion segmentation")
+    for epoch in range(num_epochs):
+        for images, targets in train_loader:  # Assuming targets now include boxes, labels, and masks
+            images = list(image.to(device) for image in images)
+            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+            # print("Images shape:", [image.shape for image in images])  # Print shapes of images
+
+          
+            optimizer_segmentation.zero_grad()
+            loss_dict = lesion_segmentation_module.mask_rcnn_model(images,targets)
+            losses = sum(loss for loss in loss_dict.values())
+            
+            losses.backward()
+            optimizer_segmentation.step()
+            
+        print(epoch,'loss:', losses.item())
+    torch.save(lesion_segmentation_module, 'lesion_segmentation_model.pth')
+
+def custom_collate_fn(batch):
+    batch_images = [item[0] for item in batch]  # Extract images
+    batch_targets = [item[1] for item in batch]  # Extract targets
+    
+    batched_images = default_collate(batch_images)  # Use PyTorch's default_collate to batch images
+    
+    # No need to batch targets as they should already be in the correct format (list of dictionaries)
+    # print(batch_targets)
+    return batched_images, batch_targets
 # # Instantiate Lesion Detection Module and Lesion Segmentation Module
 # num_classes_detection = 2  # Assuming binary classification (lesion vs. non-lesion)
 # num_classes_segmentation = 1  # Assuming single class for lesion segmentation

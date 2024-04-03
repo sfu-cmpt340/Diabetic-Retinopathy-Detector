@@ -10,6 +10,8 @@ import multiLabelClassifier
 import Lesion_Detection_Segmentation
 import lesionSegmentationDataset
 from torch.utils.data.dataloader import default_collate
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 
@@ -27,6 +29,9 @@ def evaluate_accuracy(data_loader, net, device):
             images, labels = images.to(device), labels.to(device)
             outputs = net(images)
             _, predicted = torch.max(outputs.data, 1)
+            print("predicted: ",predicted)
+            print("labels: ",labels)
+
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
     return correct / total
@@ -54,14 +59,14 @@ def train_fine_tuning(net, learning_rate, batch_size=128, num_epochs=  1,
     print("here2")
 
     train_iter = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(
-        os.path.join("data", 'train'), transform=train_augs),
+        os.path.join("data_split", 'training'), transform=train_augs),
         batch_size=batch_size, shuffle=True,num_workers=4)
     test_iter = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(
-        os.path.join("data", 'test'), transform=val_augs),
+        os.path.join("data_split", 'testing'), transform=val_augs),
         batch_size=batch_size,num_workers=4)
-    val_iter = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(
-        os.path.join("data", 'val'), transform=val_augs),
-        batch_size=batch_size,num_workers=4)
+    # val_iter = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(
+    #     os.path.join("data", 'val'), transform=val_augs),
+    #     batch_size=batch_size,num_workers=4)
    
     print("here1")
     devices = d2l.try_all_gpus()
@@ -87,7 +92,7 @@ def train_fine_tuning(net, learning_rate, batch_size=128, num_epochs=  1,
     print("here5")
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    accuracy = evaluate_accuracy(val_iter, finetune_net, device)
+    accuracy = evaluate_accuracy(test_iter, finetune_net, device)
     print(f'Validation Accuracy: {accuracy * 100:.2f}%')
     torch.save(finetune_net.state_dict(), 'finetune_net.pth')
 
@@ -189,7 +194,7 @@ val_augs = transforms.Compose([
 finetune_net = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.DEFAULT)
 finetune_net.fc = nn.Linear(finetune_net.fc.in_features, 5)
 nn.init.xavier_uniform_(finetune_net.fc.weight)
-# train_fine_tuning(finetune_net, 5e-5)
+train_fine_tuning(finetune_net, 5e-5)
 
 ground_truth_dirs_train = {
      'Microaneurysms': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/1. Microaneurysms', 'MA'),
@@ -229,7 +234,6 @@ test_iter_detection_segmentation = torch.utils.data.DataLoader(test_dataset_dete
 # del fine_tuned_weights['fc.weight']
 # del fine_tuned_weights['fc.bias']
 
-# train_fine_tuning(finetune_net, 5e-5)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # finetune_net.load_state_dict(torch.load('finetune_net.pth'))
 # lesion_detection_model.load_state_dict(fine_tuned_weights, strict=False)
@@ -300,7 +304,7 @@ optimizer_segmentation = torch.optim.Adam(lesion_segmentation_module.parameters(
 
 
 
-train_lesion_segmentation(1,optimizer_segmentation,lesion_segmentation_module,segmentation_data_loader,device)
+# train_lesion_segmentation(1,optimizer_segmentation,lesion_segmentation_module,segmentation_data_loader,device)
 
 
 
