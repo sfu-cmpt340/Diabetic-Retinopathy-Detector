@@ -5,6 +5,8 @@ from torch.autograd import Variable
 import matplotlib.pyplot as plt
 from PIL import ImageFile
 import copy
+
+
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 def train_model(model, criterion, optimizer, lr_scheduler,dset_loaders,dset_sizes, num_epochs=100,use_gpu =0):
@@ -130,69 +132,5 @@ def exp_lr_scheduler(optimizer, epoch, init_lr=0.001, lr_decay_epoch=30):
         param_group['lr'] = lr
 
     return optimizer
-
-def train_model1(model, criterion,train_loader,test_loader,device, learning_rate,num_epochs=100,param_group=True):
-
-    best_model = model
-    optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,momentum=0.9,
-                                  weight_decay=0.001)
-
-    for epoch in range(num_epochs):
-            print('Epoch {}/{}'.format(epoch, num_epochs - 1))
-            print('-' * 10)
-
-      
- 
-            model.train()  # Set model to training mode
-
-
-            running_loss = 0.0
-            running_corrects = 0
-
-            # Iterate over data.
-            for data in train_loader:
-                inputs, labels = data
-                inputs, labels = Variable(inputs), Variable(labels)
-
-                
-                outputs = model(inputs)
-                _, preds = torch.max(outputs.data, 1)
-                
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimizer.step()
-                try:
-                    running_loss += loss.item()
-                    running_corrects += torch.sum(preds == labels.data)
-                except:
-                    print('unexpected error, could not calculate loss or do a sum.')
-            print('trying epoch loss')
-            epoch_loss = running_loss / len(train_loader.dataset)
-            epoch_acc = running_corrects.item() / float(len(train_loader.dataset))
-            print('Loss: {:.4f} Acc: {:.4f}'.format(
-                epoch_loss, epoch_acc))
-
-    print('Training complete')
-    accuracy = evaluate_accuracy(test_loader, model, device)
-    print(f'Validation Accuracy: {accuracy * 100:.2f}%')
-    return best_model
-
-def evaluate_accuracy(data_loader, net, device):
-    net.eval()  # Set the model to evaluation mode
-    correct = 0
-    total = 0
-    print("here6")
-
-    with torch.no_grad():  # No need to compute gradients during evaluation
-        for images, labels in data_loader:
-            images, labels = images.to(device), labels.to(device)
-            outputs = net(images)
-            _, predicted = torch.max(outputs.data, 1)
-            print("predicted: ",predicted)
-            print("labels: ",labels)
-
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-    return correct / total
 
 

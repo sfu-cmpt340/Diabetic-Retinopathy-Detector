@@ -11,61 +11,52 @@ import matplotlib.pyplot as plt
 from PIL import ImageFile
 import main_fine_tuning as resnetModule
 from torchvision.transforms import Compose, Resize, Normalize,ToTensor
+from torch.utils.data import DataLoader, WeightedRandomSampler
 import multiLabelClassifier
 import Lesion_Detection_Segmentation
 import lesionSegmentationDataset
 import DRGrading
-from PIL import ImageFile
+from PIL import ImageFile, Image, UnidentifiedImageError
+import alt
+
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 if __name__ == '__main__': 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-
+    
+    dset_loaders,dsets,dset_sizes = alt.BASE_DR()
+    
     ### BASE DR MODEL RESNET
     finetune_net = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.DEFAULT)
     finetune_net.fc = nn.Linear(finetune_net.fc.in_features, 5)
     nn.init.xavier_uniform_(finetune_net.fc.weight)
-
-    data_transforms = {
-    'training': transforms.Compose([
-        transforms.Resize((224, 224)),  # Resize images to 224x224
-        transforms.RandomHorizontalFlip(),  # Apply random horizontal flip
-        transforms.RandomRotation(20),  # Randomly rotate images by 20 degrees
-        transforms.ToTensor(),  # Convert images to PyTorch tensors
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize images
-    ]),
-    'testing': transforms.Compose([
-        transforms.Resize((224, 224)),  # Resize images to 224x224
-        transforms.RandomHorizontalFlip(),  # Apply random horizontal flip
-        transforms.RandomRotation(20),  # Randomly rotate images by 20 degrees
-        transforms.ToTensor(),  # Convert images to PyTorch tensors
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize images
-    ]),
-}
-    data_dir = 'data_split'
-    dsets = {x: torchvision.datasets.ImageFolder(os.path.join(data_dir, x), data_transforms[x])
-         for x in ['training', 'testing']}
-    dset_loaders = {x: torch.utils.data.DataLoader(dsets[x], batch_size=4,
-                                               shuffle=True, num_workers=0)
-                for x in ['training', 'testing']}
-    dset_sizes = {x: len(dsets[x]) for x in ['training', 'testing']}
-    dset_classes = 5
-
-
     criterion = nn.CrossEntropyLoss()
 
 
     # Run the functions and save the best model in the function model_ft.
-    optimizer_ft = optim.RMSprop(finetune_net.parameters(), lr=0.0001)
-    # finetune_net = resnetModule.train_model(finetune_net, criterion, optimizer_ft,resnetModule.exp_lr_scheduler,dset_loaders,dset_sizes,
-                        # num_epochs=1) UNCOMMENT THIS TO TRAIN
+    optimizer_ft = optimizer = optim.Adam(params=finetune_net.parameters(), lr=0.001)
+    finetune_net = resnetModule.train_model(finetune_net, criterion, optimizer_ft,resnetModule.exp_lr_scheduler,dset_loaders,dset_sizes,
+                        num_epochs=1) 
     torch.save(finetune_net.state_dict(), 'fine_tuned_resnet101.pth')
 
+    # data_transforms = {
+    # 'training': transforms.Compose([
+    #     transforms.Resize((224, 224)),  # Resize images to 224x224
+    #     transforms.RandomHorizontalFlip(),  # Apply random horizontal flip
+    #     transforms.RandomRotation(20),  # Randomly rotate images by 20 degrees
+    #     transforms.ToTensor(),  # Convert images to PyTorch tensors
+    #     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize images
+    # ]),
+    # 'testing': transforms.Compose([
+    #     transforms.Resize((224, 224)),  # Resize images to 224x224
+    #     transforms.ToTensor(),  # Convert images to PyTorch tensors
+    # ]),
+# }
+   
 
-
+  
 
     ## LESION SEGMENTATION -- THIS USES THE BASE DR MODEL (RESNET)
 
@@ -139,7 +130,7 @@ segmentation_data_loader = torch.utils.data.DataLoader( segmentation_dataset, ba
 criterion_segmentation = nn.BCEWithLogitsLoss()  # Assuming binary segmentation
 optimizer_segmentation = torch.optim.Adam(lesion_segmentation_module.parameters(), lr=0.01)
 
-# Lesion_Detection_Segmentation.train_lesion_segmentation(1,optimizer_segmentation,lesion_segmentation_module,segmentation_data_loader,device)
+Lesion_Detection_Segmentation.train_lesion_segmentation(1,optimizer_segmentation,lesion_segmentation_module,segmentation_data_loader,device)
 
 ##### FINAL DR GRADING -----------
 
@@ -163,23 +154,6 @@ dr_grading_subnetwork = DRGrading.DRGradingSubNetwork(resNet18, lesion_segmentat
 # Define loss function and optimizer
 
 print("here")
-# preprocess = transforms.Compose([
-#     transforms.Resize((224, 224)),  # Resize image to match the input size expected by the model
-#     transforms.ToTensor(),           # Convert image to tensor
-#     transforms.Normalize(            # Normalize image
-#         mean=[0.485, 0.456, 0.406],   # Mean and standard deviation values used for normalization
-#         std=[0.229, 0.224, 0.225]
-#     )
-# ])
-# train_loader = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(
-#             os.path.join("data_split", 'training'),transform=preprocess),
-#             batch_size=10, shuffle=True,num_workers=1)
-# test_loader = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(
-#             os.path.join("data_split", 'testing'),transform=preprocess),
-#             batch_size=10,num_workers=1)
-
-  # Adjust the number of epochs as needed
-dr_grading_subnetwork.train()
 
 DRGrading.train_classification(loader =dset_loaders["training"],num_epochs=1,dr_grading_subnetwork=dr_grading_subnetwork,lr=0.0001,device=device)
 

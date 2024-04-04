@@ -162,3 +162,5 @@ cython_debug/
 /data_split
 /disease_no_disease
 /data_lesion_detection
+/gaussian_filtered_images
+/Imagenes
