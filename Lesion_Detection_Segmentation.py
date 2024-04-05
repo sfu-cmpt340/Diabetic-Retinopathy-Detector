@@ -1,21 +1,11 @@
-
-
-
-
 import torch
 import torch.nn as nn
 import torchvision.models as models
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-import torchvision.models.detection as detection
-from torch.utils.data import DataLoader
-import torch.nn.functional as F
+import matplotlib.pyplot as plt
 from torch.utils.data.dataloader import default_collate
-import torchvision
+import copy
 from torchvision.models.detection.rpn import AnchorGenerator
 from torchvision.models.detection import MaskRCNN 
-from torchvision.ops.feature_pyramid_network import LastLevelMaxPool
-from torchvision.models.detection.backbone_utils import BackboneWithFPN
 from torch.optim import SGD
 
 def evaluate_multi_label_accuracy(data_loader, net, device, threshold=0.5):
@@ -53,6 +43,7 @@ class LesionDetectionModel():
         self.model.to(self.device)
 
     def train(self, train_iter, test_iter, num_epochs=5, param_group=True):
+        print("Training lesion detection")
         if param_group:
             params_1x = [param for name, param in self.model.named_parameters() if 'fc' not in name]
             optimizer = SGD([
@@ -65,6 +56,9 @@ class LesionDetectionModel():
         loss_fn = nn.BCEWithLogitsLoss()
         self.model.train()
         # self.net.to(self.device)
+        best_acc = 0.0
+        train_losses, val_accuracies = [], []
+      
 
         for epoch in range(num_epochs):
             running_loss = 0.0
@@ -78,11 +72,34 @@ class LesionDetectionModel():
                 running_loss += loss.item() * images.size(0)
 
             epoch_loss = running_loss / len(train_iter.dataset)
-            print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}')
+            train_losses.append(epoch_loss)
             # Optionally implement validation accuracy calculation here
             val_accuracy = evaluate_multi_label_accuracy(test_iter, self.model, self.device)
-            print(f'Validation Multi-Label Accuracy: {val_accuracy:.4f}')
+            val_accuracies.append(val_accuracy)
+            print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}, '
+              f'Validation Multi-Label Accuracy: {val_accuracy:.4f}')
+            if val_accuracy > best_acc:
+                best_acc = val_accuracy
+                best_model_wts = copy.deepcopy(self.model.state_dict())
+            print(f"Best Val Accuracy: {best_acc:.4f}")
         print("Training completed.")
+        self.model.load_state_dict(best_model_wts)
+        plt.figure(figsize=(12, 5))
+        plt.subplot(1, 2, 1)
+        plt.plot(range(num_epochs), train_losses, label='Training Loss')
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.legend()
+        
+        plt.subplot(1, 2, 2)
+        plt.plot(range(num_epochs), val_accuracies, label='Validation Accuracy')
+        plt.xlabel('Epochs')
+        plt.ylabel('Accuracy')
+        plt.legend()
+        
+        plt.show()
+        
+        return self.model
 
     def forward(self, x):
         # Forward pass
@@ -129,60 +146,12 @@ class LesionSegmentationModule(nn.Module):
         output = self.mask_rcnn_model(images, targets)
         return output
 
-def train_lesion_detection(net, num_epochs, learning_rate,
-                           device,train_iter, test_iter, param_group=True):
-    print("Initializing training process...")
-
-
-    # Loss function
-    loss_fn = nn.BCEWithLogitsLoss()  # Adjust based on your task; this is for classification
-
-    #  It creates a differential learning rate strategy. 
-    # This is common when you're fine-tuning a pre-trained 
-    # model and want to update the pre-trained weights slowly while 
-    # allowing more substantial updates to the newly added layers
-    if param_group:
-        # Example: Set different learning rates for different parts of the model
-        params_1x = [param for name, param in net.parameters()
-                     if 'fc' not in name]  # Adjust if your model's layer names differ
-        trainer = torch.optim.SGD([
-            {'params': params_1x},
-            {'params': net.fc.parameters(), 'lr': learning_rate * 10}],  # Example adjustment
-            lr=learning_rate, weight_decay=0.001)
-    else:
-        trainer = torch.optim.SGD(net.parameters(), lr=learning_rate, weight_decay=0.001)
-
-    print("here 7")
-
-    # Training loop
-    net.to(device)
-    optimizer = torch.optim.SGD(net.parameters(), lr=learning_rate, weight_decay=0.001)
-
-    for epoch in range(num_epochs):
-        net.train()  # Set the network to training mode
-        running_loss = 0.0
-        for images, labels in train_iter:
-            images = images.to(device)
-            labels = labels.to(device)
-            
-            optimizer.zero_grad()  # Zero the parameter gradients
-            outputs = net(images)  # Forward pass
-            loss = loss_fn(outputs, labels)  # Calculate loss
-            loss.backward()  # Backward pass
-            optimizer.step()  # Optimize
-            
-            running_loss += loss.item() * images.size(0)
-        
-        epoch_loss = running_loss / len(train_iter.dataset)
-        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}')
-        
-        # Evaluate after each epoch
-        val_accuracy = evaluate_multi_label_accuracy(test_iter, net, device)
-        print(f'Validation Multi-Label Accuracy: {val_accuracy:.4f}')
-    print("Training completed.")
 
 def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segmentation_module, train_loader,device):
     lesion_segmentation_module.to(device)
+    best_loss = float('inf')
+    best_model_wts = copy.deepcopy(lesion_segmentation_module.state_dict())
+    epoch_losses = []  # To store sum of losses for each epoch
     print("Training lesion segmentation")
     for epoch in range(num_epochs):
         for images, targets in train_loader:  # Assuming targets now include boxes, labels, and masks
@@ -199,7 +168,30 @@ def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segment
             optimizer_segmentation.step()
             
         print(epoch,'loss:', losses.item())
-    torch.save(lesion_segmentation_module, 'lesion_segmentation_model.pth')
+        epoch_loss = losses / len(train_loader)
+        epoch_losses.append(epoch_loss.item())  # Append epoch loss
+        
+        # If this epoch yields the best loss, deep copy the model
+        if epoch_loss < best_loss:
+            best_loss = epoch_loss
+            best_model_wts = copy.deepcopy(lesion_segmentation_module.state_dict())
+        
+        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}")
+    
+    # Load best model weights
+    lesion_segmentation_module.load_state_dict(best_model_wts)
+    torch.save(lesion_segmentation_module.state_dict(), 'lesion_segmentation_model_dict.pth')
+    
+    # Plot training loss
+    plt.figure()
+    plt.plot(range(1, num_epochs+1), epoch_losses, label='Training Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.title('Training Loss Over Epochs for Lesion Segmentation')
+    plt.legend()
+    plt.show()
+
+    return lesion_segmentation_module  # Return the model with the best weights
 
 def custom_collate_fn(batch):
     batch_images = [item[0] for item in batch]  # Extract images

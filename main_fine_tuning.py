@@ -103,7 +103,7 @@ def train_model(model, criterion, optimizer, lr_scheduler,dset_loaders,dset_size
     plt.plot(test_loss_history, label='Testing Loss')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
-    plt.title('Loss Over Time')
+    plt.title('Loss Over Time for ResNet18')
     plt.legend()
 
     plt.subplot(1, 2, 2)
@@ -111,7 +111,7 @@ def train_model(model, criterion, optimizer, lr_scheduler,dset_loaders,dset_size
     plt.plot(test_acc_history, label='Testing Accuracy')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy')
-    plt.title('Accuracy Over Time')
+    plt.title('Accuracy Over Time for ResNet18')
     plt.legend()
 
     plt.show()

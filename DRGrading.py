@@ -1,4 +1,3 @@
-from cgi import test
 import torch
 import os
 import torch.nn as nn
@@ -6,10 +5,11 @@ import torchvision
 import torchvision.models as models
 from torchvision import transforms
 from torch import nn
-from PIL import Image
 from torch.optim import SGD
 import torch.nn.functional as F
 from PIL import ImageFile
+import matplotlib.pyplot as plt
+import copy
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
@@ -45,7 +45,11 @@ class DRGradingSubNetwork(nn.Module):
         # print(output)
         return output
 
-def train_classification( loader,num_epochs, dr_grading_subnetwork,lr,device):
+def train_classification( loader,num_epochs, dr_grading_subnetwork,lr,device,test_loader):
+        dr_grading_subnetwork.to(device)
+        best_acc = 0.0  # Initialize the best test accuracy
+        best_model_wts = copy.deepcopy(dr_grading_subnetwork.state_dict())
+        train_losses, test_accuracies = [], []  # Lists to store metrics for plotting
         params = [
             {'params': dr_grading_subnetwork.f1.parameters(), 'lr': lr},  # Fixed learning rate
             {'params': dr_grading_subnetwork.resnet18.parameters(), 'lr': 0.0},  # Learning rate set to 0 for fixed parameters
@@ -69,8 +73,46 @@ def train_classification( loader,num_epochs, dr_grading_subnetwork,lr,device):
 
                 running_loss += loss.item() * image.size(0)
             epoch_loss = running_loss / len(loader.dataset)
-            print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}')
-            print("DONE TRAINING")
+            train_losses.append(epoch_loss)
+            dr_grading_subnetwork.eval()
+            correct, total = 0, 0
+            with torch.no_grad():
+                for images, labels in test_loader:
+                    images, labels = images.to(device), labels.to(device)
+                    outputs = dr_grading_subnetwork(images)
+                    _, predicted = torch.max(outputs, 1)
+                    total += labels.size(0)
+                    correct += (predicted == labels).sum().item()
+            test_acc = 100 * correct / total
+            test_accuracies.append(test_acc)
+
+            print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}, Test Acc: {test_acc:.2f}%')
+
+        # Update best model if test accuracy improved
+            if test_acc > best_acc:
+                best_acc = test_acc
+                best_model_wts = copy.deepcopy(dr_grading_subnetwork.state_dict())
+        torch.save(dr_grading_subnetwork.state_dict(), 'dr_grading_model_dict.pth')
+        print(f'Best Test Accuracy: {best_acc:.2f}%')
+        torch.save(dr_grading_subnetwork, 'DRGrading_trained_model.pth')
+        plt.subplot(1, 2, 1)  # 1 row, 2 columns, 1st subplot
+        plt.plot(range(1, num_epochs+1), train_losses, label='Training Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.title('Training Loss Over Epochs for DR Grading')
+        plt.legend()
+
+        # Plot test accuracy
+        plt.subplot(1, 2, 2)  # 1 row, 2 columns, 2nd subplot
+        plt.plot(range(1, num_epochs+1), test_accuracies, label='Test Accuracy', color='orange')
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy (%)')
+        plt.title('Test Accuracy Over Epochs for DR Grading')
+        plt.legend()
+
+        plt.tight_layout()
+        plt.show()
+        print("DONE TRAINING AND TESTING")
 
 def test_accuracy(loader, model, device):
     model.eval()  # Set the model to evaluation mode
@@ -135,9 +177,9 @@ def main():
     # Optionally, save the trained model
     # torch.save(dr_grading_subnetwork, 'trained_model.pth')
     # dr_grading_subnetwork = torch.load('trained_model.pth')
-    dr_grading_subnetwork.eval()
+    # dr_grading_subnetwork.eval()
 
-    test_accuracy(test_loader,dr_grading_subnetwork,device=device)
+    # test_accuracy(test_loader,dr_grading_subnetwork,device=device)
 
 if __name__ == "__main__":
     main()

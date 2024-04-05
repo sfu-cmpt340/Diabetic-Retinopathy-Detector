@@ -1,22 +1,16 @@
-from __future__ import print_function, division
-import os
 import torch
 import torchvision
 from torch import nn
-from torchvision import transforms
 import torchvision.models as models
 import torch.optim as optim
-import numpy as np
-import matplotlib.pyplot as plt
 from PIL import ImageFile
 import main_fine_tuning as resnetModule
 from torchvision.transforms import Compose, Resize, Normalize,ToTensor
-from torch.utils.data import DataLoader, WeightedRandomSampler
 import multiLabelClassifier
 import Lesion_Detection_Segmentation
 import lesionSegmentationDataset
 import DRGrading
-from PIL import ImageFile, Image, UnidentifiedImageError
+from PIL import ImageFile
 import alt
 
 
@@ -39,26 +33,14 @@ if __name__ == '__main__':
     optimizer_ft = optimizer = optim.Adam(params=finetune_net.parameters(), lr=0.001)
     finetune_net = resnetModule.train_model(finetune_net, criterion, optimizer_ft,resnetModule.exp_lr_scheduler,dset_loaders,dset_sizes,
                         num_epochs=1) 
-    torch.save(finetune_net.state_dict(), 'fine_tuned_resnet101.pth')
+    torch.save(finetune_net.state_dict(), 'fine_tuned_resnet18_state_dict.pth')
 
-    # data_transforms = {
-    # 'training': transforms.Compose([
-    #     transforms.Resize((224, 224)),  # Resize images to 224x224
-    #     transforms.RandomHorizontalFlip(),  # Apply random horizontal flip
-    #     transforms.RandomRotation(20),  # Randomly rotate images by 20 degrees
-    #     transforms.ToTensor(),  # Convert images to PyTorch tensors
-    #     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize images
-    # ]),
-    # 'testing': transforms.Compose([
-    #     transforms.Resize((224, 224)),  # Resize images to 224x224
-    #     transforms.ToTensor(),  # Convert images to PyTorch tensors
-    # ]),
-# }
+ 
    
 
   
 
-    ## LESION SEGMENTATION -- THIS USES THE BASE DR MODEL (RESNET)
+    ## LESION DETECTION -- THIS USES THE BASE DR MODEL (RESNET)
 
 ground_truth_dirs_train = {
      'Microaneurysms': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/1. Microaneurysms', 'MA'),
@@ -91,8 +73,8 @@ test_iter_detection = torch.utils.data.DataLoader(test_dataset_detection, batch_
 
 
 lesion_detection_model = Lesion_Detection_Segmentation.LesionDetectionModel(num_classes=5, learning_rate=1e-3,device=device)
-lesion_detection_model.train(train_iter_detection,test_iter_detection, 1) 
-torch.save(lesion_detection_model.model.state_dict(), 'lesion_detection_model.pth')
+lesion_detection_model.train(train_iter_detection,test_iter_detection,1) 
+torch.save(lesion_detection_model.model.state_dict(), 'lesion_detection_model_state_dict.pth')
 
 # Retrieve the feature extractor
 checkpoint = torch.load('lesion_detection_model.pth')
@@ -137,7 +119,7 @@ Lesion_Detection_Segmentation.train_lesion_segmentation(1,optimizer_segmentation
 
 # Instantiate DR grading sub-network
 resNet18 = models.resnet18()
-state_dict = torch.load('fine_tuned_resnet101.pth')
+state_dict = torch.load('fine_tuned_resnet18_state_dict.pth')
 
     # Remove fully connected layer weights from the state dict
 
@@ -155,13 +137,12 @@ dr_grading_subnetwork = DRGrading.DRGradingSubNetwork(resNet18, lesion_segmentat
 
 print("here")
 
-DRGrading.train_classification(loader =dset_loaders["training"],num_epochs=1,dr_grading_subnetwork=dr_grading_subnetwork,lr=0.0001,device=device)
+DRGrading.train_classification(loader =dset_loaders["training"],num_epochs=1,dr_grading_subnetwork=dr_grading_subnetwork,lr=0.0001,device=device,test_loader=dset_loaders["testing"])
 
     # Optionally, save the trained model
-torch.save(dr_grading_subnetwork, 'DRGrading_trained_model.pth')
-dr_grading_subnetwork = torch.load('DRGrading_trained_model.pth')
-dr_grading_subnetwork.eval()
+# dr_grading_subnetwork = torch.load('DRGrading_trained_model.pth')
+# dr_grading_subnetwork.eval()
 
-DRGrading.test_accuracy(dset_loaders["testing"],dr_grading_subnetwork,device=device)
+# DRGrading.test_accuracy(dset_loaders["testing"],dr_grading_subnetwork,device=device)
 
 
