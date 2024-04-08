@@ -17,6 +17,8 @@ from torchvision.ops import misc as misc_nn_ops
 from tqdm import tqdm
 from torchvision.models.feature_extraction import create_feature_extractor
 from torchvision.ops.feature_pyramid_network import FeaturePyramidNetwork
+import pickle
+
 
 def evaluate_multi_label_accuracy(data_loader, net, device, threshold=0.5):
     net.eval()
@@ -93,6 +95,15 @@ class LesionDetectionModel():
                 best_model_wts = copy.deepcopy(self.model.state_dict())
             print(f"Best Val Accuracy: {best_acc:.4f}")
         self.model.load_state_dict(best_model_wts)
+        history = {
+        'train_loss_history': train_losses,
+        'val_acc_history': val_accuracy}
+
+    # Save history to a file
+        with open('lesion_detec_training_history.pkl', 'wb') as f:
+            pickle.dump(history, f)
+
+        print("Saved training and testing history to 'training_history.pkl'")
 
         print("----------TRAINING AND TESTING LESION DETECTION COMPLETED----------")
         plt.figure(figsize=(12, 5))
@@ -107,8 +118,10 @@ class LesionDetectionModel():
         plt.xlabel('Epochs')
         plt.ylabel('Accuracy')
         plt.legend()
+        plt.savefig('accuracy_dete.png')
+        # plt.close()
+        # plt.show()
         
-        plt.show()
         
         return self.model
 
@@ -175,7 +188,8 @@ class LesionSegmentationModule(nn.Module):
         # anchor_generator = AnchorGenerator(sizes=((8, 16, 32, 64, 128),), aspect_ratios=((0.5, 1.0, 2.0),))
         
         # Initialize the MaskRCNN model with the custom backbone
-        self.mask_rcnn_model = MaskRCNN(CustomBackboneWithFPN(feature_extractor,model), num_classes, 
+        self.backbone = CustomBackboneWithFPN(feature_extractor,model)
+        self.mask_rcnn_model = MaskRCNN(self.backbone, num_classes, 
         # rpn_anchor_generator=rpn_anchor_generator
         )
         
@@ -195,90 +209,53 @@ def train_mask_rcnn_epoch(lesion_segmentation_module, loader,test_loader,device,
     lesion_segmentation_module.mask_rcnn_model.train()
     best_loss = float('inf')
     best_model_wts = copy.deepcopy(lesion_segmentation_module.state_dict())
-    # for epoch in range(num_epochs):
-    #     process_bar = tqdm(enumerate(loader), total=len(loader))
-    #     for batch_cnt, batch in process_bar:
-    #         image, label = batch
-    #         image = image.permute(0, 3, 1, 2) 
-    #         # print(label)
-    #         for k, v in label.items():
-    #             label[k] = v.squeeze()
-    #         image = image.to(device)
-    #         for k, v in label.items():
-    #             if isinstance(v, torch.Tensor):
-    #                 label[k] = label[k].to(device)
-    #         # print(label['boxes'].shape)
-    #         optimizer.zero_grad()
-    #         net_out = lesion_segmentation_module(image, [label])
-    #         # print(net_out)
-    #         loss = 0
-    #         for i in net_out.values():
-    #             loss += i  
-    #         net_out['loss_sum'] = loss
-    #         loss.backward()
-    #         optimizer.step()
-    #         process_bar.set_description_str(f'loss: {float(loss):.3f}', True)
-    #     if loss < best_loss:
-    #         best_loss = loss
-    #         best_model_wts = copy.deepcopy(lesion_segmentation_module.state_dict())
-    print("-------------TRAINING & TESTING LESION SEGMENTATION COMPLETED-------------")
-    # lesion_segmentation_module.load_state_dict(best_model_wts)
-    # torch.save(lesion_segmentation_module.state_dict(), 'lesion_segmentation_model_dict.pth')
-    # lesion_segmentation_module.eval()  # Set model to evaluation mode
-    s = torch.load('lesion_segmentation_model_dict.pth')
-    lesion_segmentation_module.load_state_dict(s)
-    test_segmentation(test_loader,lesion_segmentation_module,device)
-    
-        
-def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segmentation_module, train_loader,device,test_loader):
-    lesion_segmentation_module.to(device)
-    best_loss = float('inf')
-    best_model_wts = copy.deepcopy(lesion_segmentation_module.state_dict())
-    epoch_losses = []  # To store sum of losses for each epoch
-    print("Training lesion segmentation")
-    
+    all_losses = []
     for epoch in range(num_epochs):
-        running_loss = 0.0  # In
-        for images, targets in train_loader:  # Assuming targets now include boxes, labels, and masks
-            images = list(image.to(device) for image in images)
-            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-            # print("Images shape:", [image.shape for image in images])  # Print shapes of images
-
-          
-            optimizer_segmentation.zero_grad()
-            loss_dict = lesion_segmentation_module.mask_rcnn_model(images,targets)
-            losses = sum(loss for loss in loss_dict.values())
-            losses.backward()
-            optimizer_segmentation.step()
-            running_loss += losses.item() * len(images)
-            
-        epoch_loss = running_loss / len(train_loader.dataset)  # Calculate average loss for the epoch
-        epoch_losses.append(epoch_loss)
-        
-        # Update best model if current epoch's loss is lower
-        if epoch_loss < best_loss:
-            best_loss = epoch_loss
+        process_bar = tqdm(enumerate(loader), total=len(loader))
+        for batch_cnt, batch in process_bar:
+            image, label = batch
+            image = image.permute(0, 3, 1, 2) 
+            # print(label)
+            for k, v in label.items():
+                label[k] = v.squeeze()
+            image = image.to(device)
+            for k, v in label.items():
+                if isinstance(v, torch.Tensor):
+                    label[k] = label[k].to(device)
+            # print(label['boxes'].shape)
+            optimizer.zero_grad()
+            net_out = lesion_segmentation_module(image, [label])
+            # print(net_out)
+            loss = 0
+            for i in net_out.values():
+                loss += i  
+            net_out['loss_sum'] = loss
+            loss.backward()
+            optimizer.step()
+            all_losses.append(loss.item())
+            process_bar.set_description_str(f'loss: {float(loss):.3f}', True)
+        if loss < best_loss:
+            best_loss = loss
             best_model_wts = copy.deepcopy(lesion_segmentation_module.state_dict())
-        
-        print(f"Epoch [{epoch + 1}/{num_epochs}], Loss: {epoch_loss:.4f}")
-    # Load best model weights
+    print("-------------TRAINING & TESTING LESION SEGMENTATION COMPLETED-------------")
     lesion_segmentation_module.load_state_dict(best_model_wts)
     torch.save(lesion_segmentation_module.state_dict(), 'lesion_segmentation_model_dict.pth')
-    lesion_segmentation_module.eval()  # Set model to evaluation mode
-    # all_pred, all_target_masks, avg_loss = predict_masks_and_calculate_loss(lesion_segmentation_module=lesion_segmentation_module,test_loader=test_loader,device = device)
-    print("Avg loss on testing dataset", avg_loss)
-    
-    # Plot training loss
-    plt.figure()
-    plt.plot(range(1, num_epochs+1), epoch_losses, label='Training Loss')
-    plt.xlabel('Epochs')
+    with open('lesion_seg_training_history.pkl', 'wb') as f:
+        pickle.dump(all_losses, f)
+    plt.figure(figsize=(10, 6))
+    plt.plot(all_losses, label='Training Loss')
+    plt.xlabel('Epoch')
     plt.ylabel('Loss')
-    plt.title('Training Loss Over Epochs for Lesion Segmentation')
+    plt.title('Training Loss Over Epochs')
     plt.legend()
-    plt.show()
-
-    return lesion_segmentation_module  # Return the model with the best weights
-
+    plt.savefig('training_loss_over_epochs_seg.png')
+    # plt.show()
+    # plt.close()
+    # lesion_segmentation_module.eval()  # Set model to evaluation mode
+    # s = torch.load('lesion_segmentation_model_dict.pth')
+    # lesion_segmentation_module.load_state_dict(s)
+    # test_segmentation(test_loader,lesion_segmentation_module,device)
+    
 
 def test_segmentation(test_loader,model,device):
     model.eval()  # Set the model to evaluation mode
