@@ -23,7 +23,7 @@ if __name__ == '__main__':
     dset_loaders,dsets,dset_sizes = alt.BASE_DR()
     
     ### BASE DR MODEL RESNET
-    finetune_net = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.DEFAULT)
+    finetune_net = models.resnet18(weights=torchvision.models.ResNet18_Weights.DEFAULT)
     finetune_net.fc = nn.Linear(finetune_net.fc.in_features, 5)
     nn.init.xavier_uniform_(finetune_net.fc.weight)
     criterion = nn.CrossEntropyLoss()
@@ -31,12 +31,10 @@ if __name__ == '__main__':
 
     # Run the functions and save the best model in the function model_ft.
     optimizer_ft = optimizer = optim.Adam(params=finetune_net.parameters(), lr=0.001)
-    finetune_net = resnetModule.train_model(finetune_net, criterion, optimizer_ft,resnetModule.exp_lr_scheduler,dset_loaders,dset_sizes,
-                        num_epochs=1) 
+    # finetune_net = resnetModule.train_model(finetune_net, criterion, optimizer_ft,resnetModule.exp_lr_scheduler,dset_loaders,dset_sizes,
+                        # num_epochs=1) 
     torch.save(finetune_net.state_dict(), 'fine_tuned_resnet18_state_dict.pth')
 
- 
-   
 
   
 
@@ -73,7 +71,7 @@ test_iter_detection = torch.utils.data.DataLoader(test_dataset_detection, batch_
 
 
 lesion_detection_model = Lesion_Detection_Segmentation.LesionDetectionModel(num_classes=5, learning_rate=1e-3,device=device)
-lesion_detection_model.train(train_iter_detection,test_iter_detection,1) 
+# lesion_detection_model.train(train_iter_detection,test_iter_detection,1) 
 torch.save(lesion_detection_model.model.state_dict(), 'lesion_detection_model_state_dict.pth')
 
 # Retrieve the feature extractor
@@ -100,20 +98,27 @@ mask_transforms = Compose([
     ToTensor(),
 ])
 
-segmentation_dataset = lesionSegmentationDataset.MultiLesionSegmentationDataset(images_dir='./data_lesion_detection/1. Original Images/train',
-                                         masks_dir=ground_truth_dirs_train,
-                                         image_transform=image_transforms,
-                                         mask_transform=mask_transforms)
+segmentation_dataset_test = lesionSegmentationDataset.LesionSegMask(images_path="1. Original Images/test", ground_truth_dir=ground_truth_dirs_test, root="./data_lesion_detection")
+segmentation_dataset = lesionSegmentationDataset.LesionSegMask(images_path="1. Original Images/train", ground_truth_dir=ground_truth_dirs_train, root="./data_lesion_detection")
 
 
-lesion_segmentation_module = Lesion_Detection_Segmentation.LesionSegmentationModule(feature_extractor=feature_extractor,num_classes= 5)
-segmentation_data_loader = torch.utils.data.DataLoader( segmentation_dataset, batch_size=4, shuffle=True,collate_fn=Lesion_Detection_Segmentation.custom_collate_fn)
+
+lesion_segmentation_module = Lesion_Detection_Segmentation.LesionSegmentationModule(feature_extractor=feature_extractor,model=lesion_detection_model.model,num_classes= 5)
+segmentation_data_loader = torch.utils.data.DataLoader( segmentation_dataset, batch_size=1, shuffle=True)
+segmentation_data_loader_test = torch.utils.data.DataLoader( segmentation_dataset_test, batch_size=1, shuffle=True)
+
 
 criterion_segmentation = nn.BCEWithLogitsLoss()  # Assuming binary segmentation
 optimizer_segmentation = torch.optim.Adam(lesion_segmentation_module.parameters(), lr=0.01)
 
-Lesion_Detection_Segmentation.train_lesion_segmentation(1,optimizer_segmentation,lesion_segmentation_module,segmentation_data_loader,device)
+# Lesion_Detection_Segmentation.train_lesion_segmentation(1,optimizer_segmentation,lesion_segmentation_module,segmentation_data_loader,device,segmentation_data_loader_test)
 
+Lesion_Detection_Segmentation.train_mask_rcnn_epoch(lesion_segmentation_module,segmentation_data_loader,segmentation_data_loader_test,device,1) 
+
+state_dict = torch.load('lesion_segmentation_model_dict.pth')
+lesion_segmentation_module.mask_rcnn_model.load_state_dict(state_dict)
+
+# Lesion_Detection_Segmentation.test_model(segmentation_data_loader_test,lesion_segmentation_module.mask_rcnn_model,device)
 ##### FINAL DR GRADING -----------
 
 
@@ -137,7 +142,7 @@ dr_grading_subnetwork = DRGrading.DRGradingSubNetwork(resNet18, lesion_segmentat
 
 print("here")
 
-DRGrading.train_classification(loader =dset_loaders["training"],num_epochs=1,dr_grading_subnetwork=dr_grading_subnetwork,lr=0.0001,device=device,test_loader=dset_loaders["testing"])
+# DRGrading.train_classification(loader =dset_loaders["training"],num_epochs=1,dr_grading_subnetwork=dr_grading_subnetwork,lr=0.0001,device=device,test_loader=dset_loaders["testing"])
 
     # Optionally, save the trained model
 # dr_grading_subnetwork = torch.load('DRGrading_trained_model.pth')

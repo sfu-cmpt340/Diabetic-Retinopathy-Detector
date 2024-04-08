@@ -7,6 +7,16 @@ import copy
 from torchvision.models.detection.rpn import AnchorGenerator
 from torchvision.models.detection import MaskRCNN 
 from torch.optim import SGD
+import torch.nn.functional as F
+from torchvision.ops import FeaturePyramidNetwork
+from torchvision.models.detection.backbone_utils import resnet_fpn_backbone
+from torchvision.models.detection.backbone_utils import LastLevelMaxPool
+from torchvision.models.detection.backbone_utils import BackboneWithFPN
+from torchvision.models.feature_extraction import get_graph_node_names
+from torchvision.ops import misc as misc_nn_ops
+from tqdm import tqdm
+from torchvision.models.feature_extraction import create_feature_extractor
+from torchvision.ops.feature_pyramid_network import FeaturePyramidNetwork
 
 def evaluate_multi_label_accuracy(data_loader, net, device, threshold=0.5):
     net.eval()
@@ -43,7 +53,7 @@ class LesionDetectionModel():
         self.model.to(self.device)
 
     def train(self, train_iter, test_iter, num_epochs=5, param_group=True):
-        print("Training lesion detection")
+        print("----------TRAINING AND TESTING LESION DETECTION----------")
         if param_group:
             params_1x = [param for name, param in self.model.named_parameters() if 'fc' not in name]
             optimizer = SGD([
@@ -82,8 +92,9 @@ class LesionDetectionModel():
                 best_acc = val_accuracy
                 best_model_wts = copy.deepcopy(self.model.state_dict())
             print(f"Best Val Accuracy: {best_acc:.4f}")
-        print("Training completed.")
         self.model.load_state_dict(best_model_wts)
+
+        print("----------TRAINING AND TESTING LESION DETECTION COMPLETED----------")
         plt.figure(figsize=(12, 5))
         plt.subplot(1, 2, 1)
         plt.plot(range(num_epochs), train_losses, label='Training Loss')
@@ -113,47 +124,121 @@ class LesionDetectionModel():
 
 
 class CustomBackboneWithFPN(nn.Module):
-    def __init__(self, feature_extractor):
+    def __init__(self, feature_extractor,model,pretrained=True,trainable_layers=3):
         super(CustomBackboneWithFPN, self).__init__()
         self.feature_extractor = feature_extractor
-        # Assuming the feature extractor outputs feature maps of 256 channels.
-        # This value should be changed according to your feature extractor's actual output channels.
+        self.model =   models.resnet18(weights=None)
+        d = torch.load('fine_tuned_resnet18_state_dict.pth')
+        num_ftrs = model.fc.in_features  # Get the number of input features for the fully connected layer
+
+# Replace the final fully connected layer
+        self.model.fc = nn.Linear(num_ftrs, 5)
+        self.model.load_state_dict(d)
         self.out_channels = 512
+        # self.model = nn.Sequential(*list(self.model.children())[:-1])
+
+        # Extract 4 main layers (note: MaskRCNN needs this particular name
+        # mapping for return nodes)
+        self.body = create_feature_extractor(
+            self.model, return_nodes={f'layer{k}': str(v)
+                             for v, k in enumerate([1, 2, 3, 4])})
+        # Dry run to get number of channels for FPN
+        inp = torch.randn(2, 3, 224, 224)
+        with torch.no_grad():
+            out = self.body(inp)
+        in_channels_list = [o.shape[1] for o in out.values()]
+        # Build FPN
+        self.fpn = FeaturePyramidNetwork(
+            in_channels_list, out_channels=self.out_channels,
+            extra_blocks=LastLevelMaxPool())
+
     
-    def forward(self, x):
-        # print(x)
-        return self.feature_extractor(x)
+    
+    def forward(self, x):        
+        # Pass feature maps through the FPN
+        x = self.body(x)
+        x = self.fpn(x)
+        
+        return x
 
 # Define Lesion Segmentation Module
 class LesionSegmentationModule(nn.Module):
-    def __init__(self, feature_extractor,num_classes=5,trainable_layers=5,):
-        # Load MaskRCNN model with ResNet50 backbone and FPN
-        # self.mask_rcnn_model = detection.maskrcnn_resnet50_fpn(weights=MaskRCNN_ResNet50_FPN_Weights.DEFAULT)
+    def __init__(self, feature_extractor,model,num_classes=5,trainable_layers=5,):
+        # Load MaskRCNN model with ResNet18 backbone and FPN
         super(LesionSegmentationModule, self).__init__()
         # Create the custom FPN backbone from a pre-trained ResNet model
-        backbone = CustomBackboneWithFPN(feature_extractor)
-        anchor_generator = AnchorGenerator(sizes=((32, 64, 128, 256, 512),), aspect_ratios=((0.5, 1.0, 2.0),))
+        anchor_sizes = ((8, 16, 32, 64, 128), )
+        aspect_ratios = [(0.5, 1.0, 2.0) for _ in range(len(anchor_sizes))]
+        rpn_anchor_generator = AnchorGenerator(
+            anchor_sizes, aspect_ratios
+        )
+        # anchor_generator = AnchorGenerator(sizes=((8, 16, 32, 64, 128),), aspect_ratios=((0.5, 1.0, 2.0),))
         
         # Initialize the MaskRCNN model with the custom backbone
-        self.mask_rcnn_model = MaskRCNN(backbone=backbone, num_classes=num_classes, rpn_anchor_generator=anchor_generator)
+        self.mask_rcnn_model = MaskRCNN(CustomBackboneWithFPN(feature_extractor,model), num_classes, 
+        # rpn_anchor_generator=rpn_anchor_generator
+        )
         
-        for param in backbone.parameters():
+        for param in self.mask_rcnn_model.backbone.parameters():
             param.requires_grad = False
         
     def forward(self, images, targets=None):
         if self.training and targets is None:
             raise ValueError("During training, targets must be provided.")
         output = self.mask_rcnn_model(images, targets)
+        # print(output)
         return output
 
-
-def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segmentation_module, train_loader,device):
+def train_mask_rcnn_epoch(lesion_segmentation_module, loader,test_loader,device,num_epochs):
+    print("-------------TRAINING & TESTING LESION SEGMENTATION-------------")
+    optimizer = SGD(lesion_segmentation_module.mask_rcnn_model.parameters(), 0.001, 0.95, weight_decay=0.00001)
+    lesion_segmentation_module.mask_rcnn_model.train()
+    best_loss = float('inf')
+    best_model_wts = copy.deepcopy(lesion_segmentation_module.state_dict())
+    # for epoch in range(num_epochs):
+    #     process_bar = tqdm(enumerate(loader), total=len(loader))
+    #     for batch_cnt, batch in process_bar:
+    #         image, label = batch
+    #         image = image.permute(0, 3, 1, 2) 
+    #         # print(label)
+    #         for k, v in label.items():
+    #             label[k] = v.squeeze()
+    #         image = image.to(device)
+    #         for k, v in label.items():
+    #             if isinstance(v, torch.Tensor):
+    #                 label[k] = label[k].to(device)
+    #         # print(label['boxes'].shape)
+    #         optimizer.zero_grad()
+    #         net_out = lesion_segmentation_module(image, [label])
+    #         # print(net_out)
+    #         loss = 0
+    #         for i in net_out.values():
+    #             loss += i  
+    #         net_out['loss_sum'] = loss
+    #         loss.backward()
+    #         optimizer.step()
+    #         process_bar.set_description_str(f'loss: {float(loss):.3f}', True)
+    #     if loss < best_loss:
+    #         best_loss = loss
+    #         best_model_wts = copy.deepcopy(lesion_segmentation_module.state_dict())
+    print("-------------TRAINING & TESTING LESION SEGMENTATION COMPLETED-------------")
+    # lesion_segmentation_module.load_state_dict(best_model_wts)
+    # torch.save(lesion_segmentation_module.state_dict(), 'lesion_segmentation_model_dict.pth')
+    # lesion_segmentation_module.eval()  # Set model to evaluation mode
+    s = torch.load('lesion_segmentation_model_dict.pth')
+    lesion_segmentation_module.load_state_dict(s)
+    test_segmentation(test_loader,lesion_segmentation_module,device)
+    
+        
+def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segmentation_module, train_loader,device,test_loader):
     lesion_segmentation_module.to(device)
     best_loss = float('inf')
     best_model_wts = copy.deepcopy(lesion_segmentation_module.state_dict())
     epoch_losses = []  # To store sum of losses for each epoch
     print("Training lesion segmentation")
+    
     for epoch in range(num_epochs):
+        running_loss = 0.0  # In
         for images, targets in train_loader:  # Assuming targets now include boxes, labels, and masks
             images = list(image.to(device) for image in images)
             targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
@@ -163,24 +248,25 @@ def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segment
             optimizer_segmentation.zero_grad()
             loss_dict = lesion_segmentation_module.mask_rcnn_model(images,targets)
             losses = sum(loss for loss in loss_dict.values())
-            
             losses.backward()
             optimizer_segmentation.step()
+            running_loss += losses.item() * len(images)
             
-        print(epoch,'loss:', losses.item())
-        epoch_loss = losses / len(train_loader)
-        epoch_losses.append(epoch_loss.item())  # Append epoch loss
+        epoch_loss = running_loss / len(train_loader.dataset)  # Calculate average loss for the epoch
+        epoch_losses.append(epoch_loss)
         
-        # If this epoch yields the best loss, deep copy the model
+        # Update best model if current epoch's loss is lower
         if epoch_loss < best_loss:
             best_loss = epoch_loss
             best_model_wts = copy.deepcopy(lesion_segmentation_module.state_dict())
         
-        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss:.4f}")
-    
+        print(f"Epoch [{epoch + 1}/{num_epochs}], Loss: {epoch_loss:.4f}")
     # Load best model weights
     lesion_segmentation_module.load_state_dict(best_model_wts)
     torch.save(lesion_segmentation_module.state_dict(), 'lesion_segmentation_model_dict.pth')
+    lesion_segmentation_module.eval()  # Set model to evaluation mode
+    # all_pred, all_target_masks, avg_loss = predict_masks_and_calculate_loss(lesion_segmentation_module=lesion_segmentation_module,test_loader=test_loader,device = device)
+    print("Avg loss on testing dataset", avg_loss)
     
     # Plot training loss
     plt.figure()
@@ -193,39 +279,47 @@ def train_lesion_segmentation(num_epochs, optimizer_segmentation, lesion_segment
 
     return lesion_segmentation_module  # Return the model with the best weights
 
-def custom_collate_fn(batch):
-    batch_images = [item[0] for item in batch]  # Extract images
-    batch_targets = [item[1] for item in batch]  # Extract targets
-    
-    batched_images = default_collate(batch_images)  # Use PyTorch's default_collate to batch images
-    
-    # No need to batch targets as they should already be in the correct format (list of dictionaries)
-    # print(batch_targets)
-    return batched_images, batch_targets
-# # Instantiate Lesion Detection Module and Lesion Segmentation Module
-# num_classes_detection = 2  # Assuming binary classification (lesion vs. non-lesion)
-# num_classes_segmentation = 1  # Assuming single class for lesion segmentation
-# # lesion_detection_module = LesionDetectionModule(num_classes_detection)
-# lesion_segmentation_module = LesionSegmentationModule(num_classes_segmentation)
 
-# # Define loss function and optimizer
-# criterion_detection = nn.BCEWithLogitsLoss()  # Using BCEWithLogitsLoss for multi-label classification
-# criterion_segmentation = nn.BCEWithLogitsLoss()  # Assuming binary segmentation
-# optimizer_detection = torch.optim.Adam(lesion_detection_module.parameters(), lr=0.001)
-# optimizer_segmentation = torch.optim.Adam(lesion_segmentation_module.parameters(), lr=0.001)
+def test_segmentation(test_loader,model,device):
+    model.eval()  # Set the model to evaluation mode
+    total_iou = 0.0
+    num_samples = 0
 
-# # Define dataset and data loader
-# num_samples = 1000  # Define the number of samples in your dataset
-# batch_size = 32  # Define your desired batch size
-# # dataset = PlaceholderDataset(num_samples=num_samples)
-# train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    for images, targets in test_loader:
+        print("this is shape")
+        print(images.shape)
+        with torch.no_grad():
+            images = images.permute(0, 3, 1, 2).to(device)
+            predictions = model(images)  # Get model predictions
+            # Calculate metrics here, e.g., IoU
+            for i, prediction in enumerate(predictions):
+                pred_mask = prediction['masks']  # Assuming binary mask [N, 1, H, W]
+                true_mask = targets['masks']
+                print("Predicted mask shape:", pred_mask.shape)
+                print("True mask shape:", true_mask.shape)
+                print(pred_mask)
+                print(true_mask)
+                
+                iou = calculate_iou(pred_mask, true_mask)  
+                total_iou += iou
+                num_samples += 1
 
-# # Training loop
-# num_epochs = 10  # Define the number of epochs
+    average_iou = total_iou / num_samples
+    print(f"Average IoU: {average_iou:.4f}")
 
+def calculate_iou(pred_mask, true_mask):
+    # Ensure the mask tensors are boolean (binary)
+    pred_mask_bool = pred_mask.squeeze(1) > 0.5  # Threshold for prediction
+    true_mask_bool = true_mask.squeeze(1) > 0.5 if true_mask.dim() == 4 else true_mask > 0.5
 
+    # Intersection: Element-wise AND
+    intersection = (pred_mask_bool & true_mask_bool).float().sum((1, 2))  # Shape: [N]
 
+    # Union: Element-wise OR
+    union = (pred_mask_bool | true_mask_bool).float().sum((1, 2))  # Shape: [N]
 
+    # Compute IoU and handle division by 0
+    iou = (intersection + 1e-6) / (union + 1e-6)  # Add small epsilon to avoid division by zero
 
-
-
+    # Return the mean IoU score for the batch
+    return iou.mean().item()

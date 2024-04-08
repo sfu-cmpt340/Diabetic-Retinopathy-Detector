@@ -1,6 +1,8 @@
+from email.mime import base
 import os
 import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
 import torch
 from torchvision.io import read_image
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize
@@ -8,106 +10,122 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import tv_tensors
 from torchvision.transforms.v2 import functional as F
 from torchvision.ops.boxes import masks_to_boxes
+import cv2
+from os.path import exists
+def visualize_image_mask(image_path, mask_tensor):
+    image = cv2.imread(image_path)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
+    mask = mask_tensor.numpy()  # Assuming mask_tensor is a single mask here for simplicity
+
+    # Overlay the mask on the image
+    # Assuming the mask is binary, we'll color the mask region in red
+    overlay = image.copy()
+    overlay[mask > 0] = [255, 0, 0]  # Coloring mask region in red
+
+    plt.figure(figsize=(10, 5))
+    plt.subplot(1, 2, 1)
+    plt.imshow(image)
+    plt.title('Original Image')
+    plt.axis('off')
+    
+    plt.subplot(1, 2, 2)
+    plt.imshow(overlay)
+    plt.title('Image with Mask Overlay')
+    plt.axis('off')
+    
+    plt.show()
+
+def find_boxes(image, klass=0):
+    if image is None:
+        return {}
+    retval, labels, stats, centroids = cv2.connectedComponentsWithStats(
+        (image>0).astype(np.uint8))
+#     print(labels.shape, labels.max())
+    stats[:,2] += stats[:,0]
+    stats[:,3] += stats[:,1]
+    stats[:,[0,1,2,3]] = stats[:,[1,0,3,2]]
+    stats = stats[:, :-1]
+    boxes = stats[1:]
+    masks = np.zeros((len(boxes), *image.shape), dtype=np.uint8)
+    for i in range(len(boxes)):
+        masks[i, boxes[i, 0]:boxes[i, 2], boxes[i, 1]:boxes[i, 3]] = (
+                    labels[boxes[i, 0]:boxes[i, 2], boxes[i, 1]:boxes[i, 3]] == (i + 1))
+    boxes[:,[0,1,2,3]] = boxes[:,[1,0,3,2]]
+    klass = np.array([klass] * len(boxes))
+    return dict(
+        boxes=torch.from_numpy(boxes.astype(np.float32)),
+        masks=torch.from_numpy(masks),
+        labels=torch.from_numpy(klass.astype(np.int64)))
 
 
-class MultiLesionSegmentationDataset(Dataset):
-    def __init__(self, images_dir, masks_dir, image_transform=None, mask_transform=None):
-        """
-        images_dir: Path to the directory containing images.
-        lesion_dirs: Dictionary mapping lesion types to their respective directories.
-        transform: Transformations to apply to the images and masks.
-        """
-        self.images_dir = images_dir
-        self.masks_dir = masks_dir
-        self.image_transform = image_transform
-        self.mask_transform = mask_transform
-        self.images = [f for f in os.listdir(images_dir) if f.endswith('.jpg')]
+class LesionSegMask(Dataset):
+    def __init__(self,images_path,ground_truth_dir, root=None):
+        if root is None:
+            raise Exception("data root directory is none")
+
+        original_images_path = os.path.join(root, images_path)
+
+    # Assuming ground_truth_dirs is a parameter similar to ground_truth_dirs_test defined earlier
+        self.images = []
+
+        # Get all original image file names
+        original_images = [img for img in os.listdir(original_images_path) if img.endswith('.jpg')]
+
+        for img in original_images:
+            # Extract the base name without the extension
+            base_name = img.split('.')[0]
+            image_path = os.path.join(original_images_path, img)
+
+            # Prepare to collect mask paths for this image
+            mask_paths = []
+
+            # Iterate over each lesion type and build the path to each corresponding mask
+            for lesion_type, (mask_dir, mask_suffix) in ground_truth_dir.items():
+                mask_name = f"{base_name}_{mask_suffix}.tif"
+                mask_path = os.path.join(mask_dir, mask_name)
+                if os.path.exists(mask_path):
+                    mask_paths.append(mask_path)
+                else:
+                    mask_paths.append(None)  # Append None if the mask does not exist
+
+            # Ensure that mask_paths contains all required masks, otherwise skip this image
+            if len(mask_paths) == len(ground_truth_dir):
+                self.images.append((image_path, *mask_paths))
+            self.ratio = 0.5
+
+        if not self.images:
+            raise ValueError("No images were found with the corresponding masks.")
+
+
+    def __getitem__(self, index):
+        i = self.images[index]
+        # print(self.images)
+        image = cv2.imread(i[0], cv2.IMREAD_COLOR)
+        dsize = (int(image.shape[1] * self.ratio), int(image.shape[0] * self.ratio))
+        image = cv2.resize(image, dsize=dsize)
+        
+        label = {}
+
+        for cls, path in enumerate(i[1:]):
+                if path is None or not exists(path):
+                    continue
+                mask_img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+                mask_img = cv2.resize(mask_img, dsize=dsize)
+                res = find_boxes(mask_img, cls)
+                for k, v in res.items():
+                    if k in label:
+                        label[k] = torch.cat((label[k], v))
+                        # label[k].append(v)
+                    else:
+                        label[k] = v
+        image = torch.from_numpy(image)
+        image = image.float() / 255.0
+        print("this is masks")
+        visualize_image_mask(i[0],label["masks"])
+        print(label["masks"])
+        return image, label
 
     def __len__(self):
         return len(self.images)
 
-    def __getitem__(self, idx):
-        img_path = os.path.join(self.images_dir, self.images[idx])
-        img = Image.open(img_path).convert("RGB")
-        # print(img_path)
-        
-        # Initialize an empty mask of the same size as the image
-        mask = np.zeros((np.array(img).shape[0], np.array(img).shape[1]), dtype=np.uint8)
 
-
-        # Aggregate masks from each lesion type
-        for lesion_type, (mask_dir, abbreviation) in self.masks_dir.items():
-            mask_path = os.path.join(mask_dir, self.images[idx].replace('.jpg', f'_{abbreviation}.tif'))
-            if os.path.exists(mask_path):
-                lesion_mask = Image.open(mask_path)
-                lesion_mask = np.array(lesion_mask)
-                # Update mask
-                mask = np.maximum(mask, lesion_mask)
-
-    # Convert the aggregated binary mask to a tensor mask
-        if self.mask_transform:
-            mask_tensor = self.mask_transform(Image.fromarray(mask))
-        else:
-            mask_tensor = ToTensor()(Image.fromarray(mask))
-
-    # Convert the image to tensor
-        img_tensor = self.image_transform(img) if self.image_transform else ToTensor()(img)
-
-        # Calculate bounding boxes from mask_tensor
-        pos = np.where(mask)
-        boxes = torch.tensor([[np.min(pos[1]), np.min(pos[0]), np.max(pos[1]), np.max(pos[0])]], dtype=torch.float32) if pos[0].size > 0 else torch.tensor([], dtype=torch.float32).reshape(0, 4)
-
-        num_objs = len(torch.unique(mask_tensor)) - 1  # Assuming first id is background
-        labels = torch.ones((num_objs,), dtype=torch.int64)
-        image_id = torch.tensor([idx])
-        area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
-        iscrowd = torch.zeros((num_objs,), dtype=torch.int64)
-
-        targets = {
-            "boxes": boxes,
-            "labels": labels,
-            "masks": mask_tensor,  
-            "image_id": image_id,
-            "area": area,
-            "iscrowd": iscrowd
-        }
-        # print(1)
-        # print(targets)
-
-        return img_tensor, targets
-
-
-
-
-# # Example usage
-# ground_truth_dirs = {
-#     'Microaneurysms': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/1. Microaneurysms', 'MA'),
-#     'Haemorrhages': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/2. Haemorrhages', 'HE'),
-#     'Hard_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/3. Hard Exudates', 'EX'),
-#     'Soft_Exudates': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/4. Soft Exudates', 'SE'),
-#     'Optic_Disc': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/5. Optic Disc', 'OD'),
-
-# }
-# image_transforms = Compose([
-#     Resize((224, 224)),
-#     ToTensor(),
-#     Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-# ])
-
-# # Mask transform only converts mask to tensor without normalization
-# mask_transforms = Compose([
-#     Resize((224, 224)),
-#     ToTensor(),
-# ])
-
-# dataset = MultiLesionSegmentationDataset(images_dir='./data_lesion_detection/1. Original Images/train',
-#                                          masks_dir=ground_truth_dirs,
-#                                          image_transform=image_transforms,
-#                                          mask_transform=mask_transforms)
-
-# data_loader = DataLoader(dataset, batch_size=4, shuffle=True)
-
-# for images, masks in data_loader:
-#     print(images.shape, masks.shape)
-#     break
-    # Proceed with your training loop
