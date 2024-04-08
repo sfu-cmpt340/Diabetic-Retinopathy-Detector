@@ -30,18 +30,13 @@ class DRGradingSubNetwork(nn.Module):
 
         features_lesion = features_lesion.squeeze()
         features_resnet18 = features_resnet18.squeeze()
-        print(features_resnet18.shape)
-        print(features_lesion.shape)   
+        # print(features_resnet18.shape)
+        # print(features_lesion.shape)   
 
 
         # print(features_lesion.shape,features_resnet18.shape)
         # print("combined:")
         combined_features = torch.cat((features_resnet18, features_lesion), dim=1)
-        # output = self.fc(self.relu(combined_features))
-        # print("hello")
-        # print(combined_features.shape)
-        # print("hello")
-
         # print(combined_features)
         self.f1.train()
         logits = self.f1(combined_features)
