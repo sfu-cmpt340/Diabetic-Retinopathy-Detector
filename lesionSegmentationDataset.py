@@ -12,7 +12,15 @@ from torchvision.transforms.v2 import functional as F
 from torchvision.ops.boxes import masks_to_boxes
 import cv2
 from os.path import exists
+
 def visualize_image_mask(image_path, mask_tensor):
+    """
+    Visualize an image with overlay of a binary mask.
+
+    Args:
+        image_path (str): Path to the original image.
+        mask_tensor (torch.Tensor): Binary mask tensor.
+    """
     image = cv2.imread(image_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
     mask = mask_tensor.numpy()  # Assuming mask_tensor is a single mask here for simplicity
@@ -36,6 +44,16 @@ def visualize_image_mask(image_path, mask_tensor):
     plt.show()
 
 def find_boxes(image, klass=0):
+    """
+    Find bounding boxes for segmented regions in a binary mask image.
+
+    Args:
+        image (numpy.ndarray): Binary mask image.
+        klass (int): Class label.
+
+    Returns:
+        dict: Dictionary containing bounding boxes, masks, and class labels.
+    """
     if image is None:
         return {}
     retval, labels, stats, centroids = cv2.connectedComponentsWithStats(
@@ -60,6 +78,14 @@ def find_boxes(image, klass=0):
 
 class LesionSegMask(Dataset):
     def __init__(self,images_path,ground_truth_dir, root=None):
+        """
+        Custom dataset class for loading images and corresponding ground truth masks.
+
+        Args:
+            images_path (str): Path to the directory containing original images.
+            ground_truth_dir (dict): Dictionary containing paths to directories containing ground truth masks.
+            root (str): Root directory path.
+        """
         if root is None:
             raise Exception("data root directory is none")
 
