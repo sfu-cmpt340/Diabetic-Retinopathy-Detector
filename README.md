@@ -1,22 +1,18 @@
-# SFU CMPT 340 Project Template -- Replace with project title
-This repository is a template for your CMPT 340 course project.
-Replace the title with your project title, and **add a snappy acronym that people remember (mnemonic)**.
+# Diabetic Retinopathy Detection -- DR Detection Technology
 
-Add a 1-2 line summary of your project here.
+Diabetic Retinopathy (DR) stands as a critical concern in the realm of health-
+care, particularly due to its significant impact on vision loss within the global
+population. This deep learning system developed by our team helps in detecting diabetic eye disease using retina images.
 
 ## Important Links
 
-| [Timesheet](https://google.com) | [Slack channel](https://google.com) | [Project report](https://google.com) |
+| [Timesheet](https://1sfu-my.sharepoint.com/:x:/g/personal/hamarneh_sfu_ca/EVUlCrLvcOZKq9EJZKhLz7ABDfWXQJkoOsSG26b0F9xreA?e=OQkk5Q) | [Slack channel](https://sfucmpt340spring2024.slack.com/archives/C06DW4ZJX61) | [Project report](https://www.overleaf.com/project/65a57e36713c1064d79f06e3) |
 |-----------|---------------|-------------------------|
 
 
-- Timesheet: Link your timesheet (pinned in your project's Slack channel) where you track per student the time and tasks completed/participated for this project/
-- Slack channel: Link your private Slack project channel.
-- Project report: Link your Overleaf project report document.
 
-
-## Video/demo/GIF
-Record a short video (1:40 - 2 minutes maximum) or gif or a simple screen recording or even using PowerPoint with audio or with text, showcasing your work.
+## Demo Video
+https://github.com/sfu-cmpt340/2024_1_project_09/assets/109203558/0228fa8c-bec3-4d1e-9664-8ea0954f3b77
 
 
 ## Table of Contents
