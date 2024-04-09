@@ -37,6 +37,8 @@ cd to where requirements.yml is
 conda env create -f requirements.yml
 conda activate project-dependencies
 python3 demo.py 
+cd to where requirements.txt is
+pip install -r requirements.txt
 ```
 
 ### What to find where
@@ -81,6 +83,8 @@ cd to where requirements.yml is
 conda env create -f requirements.yml
 conda activate project-dependencies
 python3 main.py 
+After cloning run requirements.txt to download all dependencies
+pip install -r requirements.txt
 ```
 
 All models will be saved in src 
