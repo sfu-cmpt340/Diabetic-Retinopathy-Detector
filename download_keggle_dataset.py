@@ -11,6 +11,13 @@ import os
 ssl._create_default_https_context = ssl._create_unverified_context
 
 def extract_zip(zip_file_path, extract_to):
+    """
+    Extracts a zip file to a specified directory.
+
+    Args:
+        zip_file_path (str): Path to the zip file.
+        extract_to (str): Directory to extract the contents of the zip file.
+    """
     with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
         zip_ref.extractall(extract_to)
 

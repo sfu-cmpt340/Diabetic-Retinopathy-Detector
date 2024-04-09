@@ -12,6 +12,22 @@ import pickle
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 def train_model(model, criterion, optimizer, lr_scheduler,dset_loaders,dset_sizes, num_epochs=100,use_gpu =0):
+    """
+    Train and test the given model.
+
+    Args:
+        model (torch.nn.Module): The neural network model.
+        criterion: The loss function.
+        optimizer: The optimization algorithm.
+        lr_scheduler: The learning rate scheduler.
+        dset_loaders (dict): Dictionary containing data loaders for training and testing datasets.
+        dset_sizes (dict): Dictionary containing sizes of training and testing datasets.
+        num_epochs (int): Number of epochs for training.
+        use_gpu (int): Flag indicating whether to use GPU.
+
+    Returns:
+        torch.nn.Module: Best model with highest accuracy.
+    """
     print("---------TRAINING & TESTING RESNET18---------")
     best_model = model
     best_acc = 0.0

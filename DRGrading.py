@@ -15,6 +15,19 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 class DRGradingSubNetwork(nn.Module):
+    """
+    Sub-network for Diabetic Retinopathy grading.
+
+    Args:
+        resnet18 (torchvision.models.resnet.ResNet): Pretrained ResNet18 model.
+        lesion_segmentation_module (torch.nn.Module): Lesion segmentation module.
+        num_classes (int): Number of output classes.
+
+    Attributes:
+        resnet18 (torchvision.models.resnet.ResNet): Pretrained ResNet18 model.
+        lesion_segmentation_module (torch.nn.Module): Lesion segmentation module.
+        f1 (torch.nn.Linear): Fully connected layer for classification.
+    """
     def __init__(self, resnet18, lesion_segmentation_module, num_classes):
         super(DRGradingSubNetwork, self).__init__()
         self.resnet18 = resnet18
@@ -46,6 +59,17 @@ class DRGradingSubNetwork(nn.Module):
         return output
 
 def train_classification( loader,num_epochs, dr_grading_subnetwork,lr,device,test_loader):
+    """
+    Train the DR grading sub-network.
+
+    Args:
+        loader (torch.utils.data.DataLoader): Training data loader.
+        num_epochs (int): Number of epochs for training.
+        dr_grading_subnetwork (DRGradingSubNetwork): DR grading sub-network.
+        lr (float): Learning rate.
+        device (torch.device): Device (GPU or CPU) for training.
+        test_loader (torch.utils.data.DataLoader): Testing data loader.
+    """        
         dr_grading_subnetwork.to(device)
         best_acc = 0.0  # Initialize the best test accuracy
         best_model_wts = copy.deepcopy(dr_grading_subnetwork.state_dict())
@@ -124,6 +148,14 @@ def train_classification( loader,num_epochs, dr_grading_subnetwork,lr,device,tes
         print("DONE TRAINING AND TESTING")
 
 def test_accuracy(loader, model, device):
+    """
+    Calculate the accuracy of the model on the test dataset.
+
+    Args:
+        loader (torch.utils.data.DataLoader): Data loader for the test dataset.
+        model (torch.nn.Module): Model to be evaluated.
+        device (torch.device): Device (GPU or CPU) for evaluation.
+    """
     model.eval()  # Set the model to evaluation mode
     correct = 0
     total = 0

@@ -14,26 +14,46 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 import cv2
 
 def BASE_DR():
+    """
+    Function to prepare and load data for Diabetic Retinopathy classification.
+
+    Returns:
+        dset_loaders: Dictionary containing training and testing DataLoader objects.
+        dsets: Dictionary containing training and testing dataset objects.
+        dset_sizes: Dictionary containing sizes of training and testing datasets.
+    """
+    # Define the path to the dataset
     path = 'gaussian_filtered_images'
+
+    # Initialize lists to store images and labels
     X = []
     y = []
+    
+    # Define the desired size of the images
     desired_size = (128, 128) 
+
+    # Define the classes
     Classes = {'0':0, '1':1, '2':2, '3':3, '4':4}
 
+    # Iterate over the classes folder
     for i in Classes:
         folder_path ='gaussian_filtered_images/' +i
         for j in os.listdir(folder_path):
+            # Read and resize image
             img = cv2.imread(folder_path+'/'+j)
             img = cv2.resize(img, desired_size)
             # normalize values
             img = img / 255  #-->Apply normalization because we want pixel values to be scaled to the range 0-1
             X.append(img)
             y.append(Classes[i])
+    
+    # Convert lists to numpy arrays ansd save them
     X = np.array(X)
     y = np.array(y)
     np.save('X_np', X)
     np.save('y_np', y)
 
+    # Define the class names
     class_names = Classes
 
     class_counts = [0] * len(class_names)
@@ -46,6 +66,7 @@ def BASE_DR():
             # Count the number of images in the class directory
             class_counts[class_idx] += len(os.listdir(class_dir))
 
+    # Calculate the class weights for weighted sampling
     total_images = sum(class_counts)
     class_weights = [total_images/count for count in class_counts]
     class_weights_tensor = torch.tensor(class_weights, dtype=torch.float)
@@ -87,7 +108,7 @@ def BASE_DR():
 
     print("DataLoaders are ready.")
 
-
+    # Create DataLoader objects for training and testing datasets
     dset_loaders = {
     'training': DataLoader(train_dataset, sampler = sampler,batch_size=32, num_workers=0),
     'testing': DataLoader(test_dataset, batch_size=32, shuffle=True, num_workers=0)
@@ -97,7 +118,8 @@ def BASE_DR():
 
     # Set up the DataLoaders in a dictionary
 
-
+    print("DataLoaders are ready.")
+    
     return dset_loaders,dsets,dset_sizes
 
     
