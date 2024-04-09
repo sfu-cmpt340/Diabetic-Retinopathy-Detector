@@ -5,6 +5,8 @@ from torch.autograd import Variable
 import matplotlib.pyplot as plt
 from PIL import ImageFile
 import copy
+import pickle
+
 
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -101,6 +103,18 @@ def train_model(model, criterion, optimizer, lr_scheduler,dset_loaders,dset_size
                     best_model = copy.deepcopy(model)
                     print('New best accuracy = ',best_acc)
     print("---------TRAINING & TESTING RESNET18 COMPLETED---------")
+    history = {
+    'train_loss_history': train_loss_history,
+    'train_acc_history': train_acc_history,
+    'test_loss_history': test_loss_history,
+    'test_acc_history': test_acc_history
+}
+
+# Save history to a file
+    with open('resNet_training_history.pkl', 'wb') as f:
+        pickle.dump(history, f)
+
+    print("Saved training and testing history to 'training_history.pkl'")
 
     plt.figure(figsize=(10, 5))
     plt.subplot(1, 2, 1)
@@ -118,8 +132,9 @@ def train_model(model, criterion, optimizer, lr_scheduler,dset_loaders,dset_size
     plt.ylabel('Accuracy')
     plt.title('Accuracy Over Time for ResNet18')
     plt.legend()
-
-    plt.show()
+    plt.savefig('accuracy_over_time_resnet18.png')
+    # plt.show()
+    # plt.close()
 
     print('Training complete')
     print('Best val Acc: {:4f}'.format(best_acc))

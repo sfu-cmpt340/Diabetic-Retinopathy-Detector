@@ -40,8 +40,9 @@ def visualize_image_mask(image_path, mask_tensor):
     plt.imshow(overlay)
     plt.title('Image with Mask Overlay')
     plt.axis('off')
-    
     plt.show()
+    plt.savefig()
+    plt.close()
 
 def find_boxes(image, klass=0):
     """
@@ -146,9 +147,9 @@ class LesionSegMask(Dataset):
                         label[k] = v
         image = torch.from_numpy(image)
         image = image.float() / 255.0
-        print("this is masks")
-        visualize_image_mask(i[0],label["masks"])
-        print(label["masks"])
+        # print("this is masks")
+        # visualize_image_mask(i[0],label["masks"])
+        # print(label["masks"])
         return image, label
 
     def __len__(self):

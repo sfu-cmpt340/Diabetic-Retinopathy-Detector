@@ -9,6 +9,7 @@ from torch.optim import SGD
 import torch.nn.functional as F
 from PIL import ImageFile
 import matplotlib.pyplot as plt
+import pickle
 import copy
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -36,20 +37,19 @@ class DRGradingSubNetwork(nn.Module):
     def forward(self, x):
         
         features_resnet18 = self.resnet18(x)
-        features_lesion = self.lesion_segmentation_module.mask_rcnn_model.backbone(x)
-        # print(features_lesion.shape,features_resnet18.shape)
+        self.lesion_segmentation_module.eval()
+        features_lesion = self.lesion_segmentation_module.backbone(x)['pool']
+        features_lesion = torch.nn.functional.adaptive_avg_pool2d(features_lesion, (1, 1)).view(features_lesion.size(0), -1)
 
         features_lesion = features_lesion.squeeze()
         features_resnet18 = features_resnet18.squeeze()
+        # print(features_resnet18.shape)
+        # print(features_lesion.shape)   
+
 
         # print(features_lesion.shape,features_resnet18.shape)
-
+        # print("combined:")
         combined_features = torch.cat((features_resnet18, features_lesion), dim=1)
-        # output = self.fc(self.relu(combined_features))
-        # print("hello")
-        # print(combined_features.shape)
-        # print("hello")
-
         # print(combined_features)
         self.f1.train()
         logits = self.f1(combined_features)
@@ -119,6 +119,13 @@ def train_classification( loader,num_epochs, dr_grading_subnetwork,lr,device,tes
         torch.save(dr_grading_subnetwork.state_dict(), 'dr_grading_model_dict.pth')
         print(f'Best Test Accuracy: {best_acc:.2f}%')
         torch.save(dr_grading_subnetwork, 'DRGrading_trained_model.pth')
+        history = {
+        'train_loss_history': train_losses,
+        'test_acc_history': test_accuracies}
+
+        with open('dr_grading_training_history.pkl', 'wb') as f:
+            pickle.dump(history, f)
+
         plt.subplot(1, 2, 1)  # 1 row, 2 columns, 1st subplot
         plt.plot(range(1, num_epochs+1), train_losses, label='Training Loss')
         plt.xlabel('Epoch')
@@ -135,7 +142,9 @@ def train_classification( loader,num_epochs, dr_grading_subnetwork,lr,device,tes
         plt.legend()
 
         plt.tight_layout()
-        plt.show()
+        plt.savefig('accuracy_over_time_dr.png')
+        # plt.show()
+        # plt.close()
         print("DONE TRAINING AND TESTING")
 
 def test_accuracy(loader, model, device):
