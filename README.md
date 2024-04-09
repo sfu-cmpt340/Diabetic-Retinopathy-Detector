@@ -72,6 +72,7 @@ Demonstrate how your work can be reproduced, e.g. the results in your report.
 Download dataset from https://www.kaggle.com/code/rinshinafebink/resnet18-final/input?select=gaussian_filtered_images                                                       ## dataset for DR
 Download second dataset from https://ieee-dataport.s3.amazonaws.com/open/3754/A.%20Segmentation.zip?response-content-disposition=attachment%3B%20filename%3D%22A.%20Segmentation.zip%22&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAJOHYI4KJCE6Q7MIQ%2F20240409%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20240409T040119Z&X-Amz-SignedHeaders=Host&X-Amz-Expires=86400&X-Amz-Signature=a95297b4008b53f350a3fa1951be8788f1420b34f02fab2249946586b29441a7         ## dataset for lesion
 unzip A. Segmentation.zip
+Rename A. Segmentation to data_lesion_detection
 unzip gaussian_filtered_images.zip
 Rename folders in gaussian_filtered_images to be :{'No_DR':0, 'Mild':1, 'Moderate':2, 'Severe':3, 'Proliferate_DR':4}
 cd to where requirements.yml is
