@@ -1,3 +1,9 @@
+import os
+import sys
+
+base_path = os.path.abspath('.')
+sys.path.append(os.path.join(base_path, 'src'))
+
 import torch
 import torchvision
 from torch import nn
@@ -6,12 +12,12 @@ import torch.optim as optim
 from PIL import ImageFile
 import main_fine_tuning as resnetModule
 from torchvision.transforms import Compose, Resize, Normalize,ToTensor
-import multiLabelClassifier
-import Lesion_Detection_Segmentation
-import lesionSegmentationDataset
-import DRGrading
+import src.multiLabelClassifier as multiLabelClassifier
+import src.Lesion_Detection_Segmentation as Lesion_Detection_Segmentation
+import src.lesionSegmentationDataset as lesionSegmentationDataset
+import src.DRGrading as DRGrading
 from PIL import ImageFile
-import alt
+import src.alt as alt
 
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -31,9 +37,9 @@ if __name__ == '__main__':
 
     # Run the functions and save the best model in the function model_ft.
     optimizer_ft = optimizer = optim.Adam(params=finetune_net.parameters(), lr=0.001)
-    # finetune_net = resnetModule.train_model(finetune_net, criterion, optimizer_ft,resnetModule.exp_lr_scheduler,dset_loaders,dset_sizes,
-                        # num_epochs=1) 
-    torch.save(finetune_net.state_dict(), 'fine_tuned_resnet18_state_dict.pth')
+    finetune_net = resnetModule.train_model(finetune_net, criterion, optimizer_ft,resnetModule.exp_lr_scheduler,dset_loaders,dset_sizes,
+                        num_epochs=35) 
+    torch.save(finetune_net.state_dict(), './src/fine_tuned_resnet18_state_dict.pth')
 
 
   
@@ -71,16 +77,15 @@ test_iter_detection = torch.utils.data.DataLoader(test_dataset_detection, batch_
 
 
 lesion_detection_model = Lesion_Detection_Segmentation.LesionDetectionModel(num_classes=5, learning_rate=1e-3,device=device)
-# lesion_detection_model.train(train_iter_detection,test_iter_detection,1) 
-torch.save(lesion_detection_model.model.state_dict(), 'lesion_detection_model_state_dict.pth')
+lesion_detection_model.train(train_iter_detection,test_iter_detection,35) 
+torch.save(lesion_detection_model.model.state_dict(), './src/lesion_detection_model_state_dict.pth')
 
-# Retrieve the feature extractor
-checkpoint = torch.load('lesion_detection_model.pth')
+checkpoint = torch.load('./src/lesion_detection_model_state_dict.pth')
 
 # Load the model state_dict
 lesion_detection_model.model.load_state_dict(checkpoint)
 
-# Now you can access the feature extractor
+
 feature_extractor = lesion_detection_model.get_feature_extractor()
 
 
@@ -112,20 +117,17 @@ criterion_segmentation = nn.BCEWithLogitsLoss()  # Assuming binary segmentation
 optimizer_segmentation = torch.optim.Adam(lesion_segmentation_module.parameters(), lr=0.01)
 
 
-# Lesion_Detection_Segmentation.train_mask_rcnn_epoch(lesion_segmentation_module,segmentation_data_loader,segmentation_data_loader_test,device,1) 
+Lesion_Detection_Segmentation.train_mask_rcnn_epoch(lesion_segmentation_module,segmentation_data_loader,segmentation_data_loader_test,device,35) 
 
-state_dict = torch.load('lesion_segmentation_model_dict.pth')
+state_dict = torch.load('./src/lesion_segmentation_model_dict.pth')
 lesion_segmentation_module.load_state_dict(state_dict)
 
-# Lesion_Detection_Segmentation.test_model(segmentation_data_loader_test,lesion_segmentation_module.mask_rcnn_model,device)
 ##### FINAL DR GRADING -----------
 
 
 # Instantiate DR grading sub-network
 resNet18 = models.resnet18()
-state_dict = torch.load('fine_tuned_resnet18_state_dict.pth')
-
-    # Remove fully connected layer weights from the state dict
+state_dict = torch.load('./src/fine_tuned_resnet18_state_dict.pth')
 
     # Load the modified state dict into the ResNet18 model
 resNet18.fc = nn.Linear(resNet18.fc.in_features, 5)
@@ -136,14 +138,10 @@ resNet18 = torch.nn.Sequential(*(list(resNet18.children())[:-1]))
 dr_grading_subnetwork = DRGrading.DRGradingSubNetwork(resNet18, lesion_segmentation_module, 5)
 
 
-# Define loss function and optimizer
-
-print("here")
-
-DRGrading.train_classification(loader =dset_loaders["training"],num_epochs=1,dr_grading_subnetwork=dr_grading_subnetwork,lr=0.0001,device=device,test_loader=dset_loaders["testing"])
+DRGrading.train_classification(loader =dset_loaders["training"],num_epochs=35,dr_grading_subnetwork=dr_grading_subnetwork,lr=0.0001,device=device,test_loader=dset_loaders["testing"])
 
     # Optionally, save the trained model
-dr_grading_subnetwork = torch.load('DRGrading_trained_model.pth')
+dr_grading_subnetwork = torch.load('./src/DRGrading_trained_model.pth')
 dr_grading_subnetwork.eval()
 
 DRGrading.test_accuracy(dset_loaders["testing"],dr_grading_subnetwork,device=device)
