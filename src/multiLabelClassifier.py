@@ -3,8 +3,8 @@ from PIL import Image
 import numpy as np
 import torch
 from torchvision.io import read_image
-from torchvision.transforms import Compose, Resize, ToTensor, Normalize
-from torch.utils.data import Dataset, DataLoader
+from torchvision.transforms import Compose, Resize, Normalize
+from torch.utils.data import Dataset
 
 class MultiLabelLesionDataset(Dataset):
     def __init__(self, images_dir, ground_truth_dirs, transform=None):
@@ -60,20 +60,3 @@ ground_truth_dirs = {
     'Optic_Disc': ('./data_lesion_detection/2. All Segmentation Groundtruths/train/5. Optic Disc', 'OD'),
 
 }
-# dataset = MultiLabelLesionDataset(images_dir='./data_lesion_detection/1. Original Images/train',
-#                                   ground_truth_dirs=ground_truth_dirs,
-#                                   transform=transform)
-                        
-# for i in range(len(dataset)):
-#     img, labels = dataset[i]
-#     print(f"Image Index: {i}")
-#     print(f"Labels: {labels.numpy()}")
-#     # # Optionally, display the image using matplotlib
-#     # import matplotlib.pyplot as plt
-#     # plt.imshow(img.permute(1, 2, 0))  # Rearrange the channels for plotting
-#     # plt.title(f"Labels: {labels.numpy()}")
-#     # plt.show()
-    
-#     if i == 5:  # Limit the output to first 6 images
-#         break
-

@@ -70,7 +70,7 @@ def train_classification( loader,num_epochs, dr_grading_subnetwork,lr,device,tes
         device (torch.device): Device (GPU or CPU) for training.
         test_loader (torch.utils.data.DataLoader): Testing data loader.
     """        
-    print("----------TRAINING & TESTING FINAL DR GRADING----------")
+    print("----------TRAINING FINAL DR GRADING----------")
     dr_grading_subnetwork.to(device)
     best_acc = 0.0  # Initialize the best test accuracy
     best_model_wts = copy.deepcopy(dr_grading_subnetwork)
@@ -146,7 +146,7 @@ def train_classification( loader,num_epochs, dr_grading_subnetwork,lr,device,tes
     plt.savefig('accuracy_over_time_dr.png')
     # plt.show()
     # plt.close()
-    print("----------TRAINING & TESTING FINAL DR GRADING COMPLETED----------")
+    print("----------TRAINING FINAL DR GRADING COMPLETED----------")
 
 
 def test_accuracy(loader, model, device):

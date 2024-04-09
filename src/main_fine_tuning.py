@@ -1,5 +1,4 @@
 from __future__ import print_function, division
-import os
 import torch
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
