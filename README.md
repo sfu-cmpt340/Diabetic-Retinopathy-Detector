@@ -31,10 +31,12 @@ https://github.com/sfu-cmpt340/2024_1_project_09/assets/109203558/0228fa8c-bec3-
 A minimal example to showcase your work
 
 ```python
-from amazing import amazingexample
-imgs = amazingexample.demo()
-for img in imgs:
-    view(img)
+download the model from : https://drive.google.com/file/d/1dKeQEWhDTrZ8C0i7qkEJf4gxz3sESKKT/view?usp=sharing
+unzip and put it in /src
+cd to where requirements.yml is
+conda env create -f requirements.yml
+conda activate project-dependencies
+python3 demo.py 
 ```
 
 ### What to find where
