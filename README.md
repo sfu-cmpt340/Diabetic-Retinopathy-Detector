@@ -32,7 +32,7 @@ A minimal example to showcase your work
 
 ```python
 download the model from : https://drive.google.com/file/d/1dKeQEWhDTrZ8C0i7qkEJf4gxz3sESKKT/view?usp=sharing
-unzip and put it in /src
+unzip and put it in root dir                ## same dir as demo.py
 cd to where requirements.yml is
 conda env create -f requirements.yml
 conda activate project-dependencies
